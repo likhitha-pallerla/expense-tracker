@@ -2,12 +2,9 @@ package com.expensetracker.api.health;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Currency;
 import java.util.List;
-import java.util.Locale;
 
 import com.expensetracker.api.health.HealthFacts.BudgetFact;
 
@@ -419,15 +416,7 @@ public final class HealthScorer {
      * any truer.
      */
     static String money(BigDecimal amount, String currency) {
-        NumberFormat format = NumberFormat.getCurrencyInstance(Locale.of("en", "IN"));
-        try {
-            format.setCurrency(Currency.getInstance(currency));
-        } catch (RuntimeException ex) {
-            // An unrecognised code must not take down the whole report.
-            format.setCurrency(Currency.getInstance("INR"));
-        }
-        format.setMaximumFractionDigits(0);
-        return format.format(amount.setScale(0, RoundingMode.HALF_UP));
+        return com.expensetracker.api.web.Money.format(amount, currency);
     }
 
     /** A scored driver before renormalisation decides what its weight becomes. */

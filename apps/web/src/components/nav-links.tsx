@@ -13,9 +13,16 @@ const links = [
   { href: "/cards", label: "Cards" },
   { href: "/import", label: "Import" },
   { href: "/review", label: "Review" },
+  { href: "/notifications", label: "Alerts" },
 ];
 
-export function NavLinks({ reviewCount = 0 }: { reviewCount?: number }) {
+export function NavLinks({
+  reviewCount = 0,
+  alertCount = 0,
+}: {
+  reviewCount?: number;
+  alertCount?: number;
+}) {
   const pathname = usePathname();
 
   return (
@@ -23,7 +30,12 @@ export function NavLinks({ reviewCount = 0 }: { reviewCount?: number }) {
       {links.map((link) => {
         const active =
           pathname === link.href || pathname.startsWith(`${link.href}/`);
-        const badge = link.href === "/review" ? reviewCount : 0;
+        const badge =
+          link.href === "/review"
+            ? reviewCount
+            : link.href === "/notifications"
+              ? alertCount
+              : 0;
 
         return (
           <Link
@@ -39,7 +51,11 @@ export function NavLinks({ reviewCount = 0 }: { reviewCount?: number }) {
             {link.label}
             {badge > 0 && (
               <span
-                aria-label={`${badge} awaiting review`}
+                aria-label={
+                  link.href === "/notifications"
+                    ? `${badge} unread`
+                    : `${badge} awaiting review`
+                }
                 className="rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-white"
               >
                 {badge}

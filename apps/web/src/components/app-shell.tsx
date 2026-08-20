@@ -30,20 +30,24 @@ export async function AppShell({
   // A badge is not worth breaking every page over, so a failure here is
   // swallowed and the nav simply renders without a count.
   let reviewCount = 0;
+  let alertCount = 0;
   try {
-    const { pending } = await apiFetch<{ pending: number }>(
-      "/api/duplicates/count",
-    );
-    reviewCount = pending;
+    const [duplicates, alerts] = await Promise.all([
+      apiFetch<{ pending: number }>("/api/duplicates/count"),
+      apiFetch<{ unread: number }>("/api/notifications/count"),
+    ]);
+    reviewCount = duplicates.pending;
+    alertCount = alerts.unread;
   } catch {
     reviewCount = 0;
+    alertCount = 0;
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-neutral-50 dark:bg-neutral-900">
       <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-3">
-          <NavLinks reviewCount={reviewCount} />
+          <NavLinks reviewCount={reviewCount} alertCount={alertCount} />
           <div className="flex items-center gap-3">
             <span className="hidden text-sm text-neutral-500 sm:inline">
               {user?.email}

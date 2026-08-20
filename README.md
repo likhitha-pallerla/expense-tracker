@@ -117,6 +117,12 @@ All routes require a bearer token and are scoped to the caller.
 | `PUT` | `/api/recurring/{id}` | Rename, recategorise or pause one |
 | `DELETE` | `/api/recurring/{id}` | Stop tracking, or undo a dismissal |
 | `GET` | `/api/financial-health` | The health score with every driver behind it |
+| `GET` | `/api/notifications` | Live alerts, worked out on read (`?includeDismissed=true`) |
+| `GET` | `/api/notifications/count` | Unread total, for the nav badge |
+| `POST` | `/api/notifications/read` | Mark one alert read, by key |
+| `POST` | `/api/notifications/read-all` | Mark everything currently showing read |
+| `POST` | `/api/notifications/dismiss` | Hide an alert until its situation changes |
+| `POST` | `/api/notifications/restore` | Undo a dismissal |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
@@ -328,6 +334,57 @@ moves the score you are being shown.
 Budgets, cards and recurring payments are read through their own services rather
 than requeried here, so the health page can never claim a budget is blown that
 the budgets page shows as on track.
+
+### Notifications
+
+Five things are worth interrupting someone for: a budget crossing a threshold,
+a card payment falling due, a subscription changing price, a subscription that
+should have been charged and wasn't, and duplicates waiting to be judged.
+
+**Alerts are never stored — only your decisions are.** A saved alert outlives
+its cause: delete the transaction that blew the budget and the row still insists
+there is a problem, pay the card and the reminder still nags. It would also need
+a scheduler, which a free-tier instance that sleeps cannot be relied on to run.
+So alerts are rebuilt from live state on every read, exactly like budget spend
+and card dues. What gets written down is the one thing that cannot be derived:
+that you have seen an alert, or told it to go away.
+
+**Each alert is identified by a key describing the situation, not the subject.**
+
+| Alert | Key |
+| --- | --- |
+| Budget threshold | `budget:{id}:{periodStart}:{threshold}` |
+| Card due | `card:{accountId}:{dueDate}` |
+| Price change | `price:{matchKey}:{newAmount}` |
+| Subscription overdue | `overdue:{matchKey}:{expectedDate}` |
+| Duplicates waiting | `duplicates:{newestCandidateId}` |
+
+That is the whole design. Dismissing March's 80% warning must not hide April's,
+nor the 100% breach a week later; dismissing one price rise must not swallow the
+next one. Because the period, the threshold and the amount are all in the key,
+each is a separate alert with its own decision, and a dismissal expires by
+itself when the situation genuinely changes.
+
+**Only the highest threshold crossed is raised.** Going from 75% to 105% crosses
+80, 90 and 100 at once. Three alerts would bury everything else in the list, and
+two of them are no longer true. 100 is always treated as a threshold whether or
+not you set it.
+
+**A card whose minimum is already paid is not alerted on.** You made a decision
+about that bill on purpose; being reminded of it is how a notification list gets
+ignored. Overdue subscriptions stay at `info` rather than a warning, because the
+two explanations — a cancellation you already know about, or an import that has
+not run — are both things that would be wrong to shout about.
+
+**The duplicates alert is keyed on the newest candidate.** A bare `duplicates`
+key would be silenced forever by one dismissal; a key holding the count would
+come back every time the number moved, including when you cleared one. Naming
+the newest one settles the queue as it stands and speaks up again only when
+something new arrives.
+
+Read and dismissed are two nullable timestamps rather than one status, because
+dismissing implies having read: an enum would force a choice between them and
+lose the fact that a dismissed alert was also, at some point, seen.
 
 ### Money rules worth knowing
 

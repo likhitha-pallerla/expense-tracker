@@ -356,3 +356,30 @@ export type HealthReport = {
   wins: string[];
   missing: string[];
 };
+
+export type NotificationType =
+  | "budget_threshold"
+  | "card_due"
+  | "duplicates_pending"
+  | "price_changed"
+  | "recurring_overdue";
+
+export type NotificationSeverity = "urgent" | "warning" | "info";
+
+/**
+ * Derived on every read, so there is no id — the key is the identity. Only
+ * `read` and `dismissed` come from anything the user has stored.
+ */
+export type Notification = {
+  key: string;
+  type: NotificationType;
+  severity: NotificationSeverity;
+  title: string;
+  body: string;
+  href: string;
+  occurredOn: string | null;
+  read: boolean;
+  dismissed: boolean;
+  readAt: string | null;
+  dismissedAt: string | null;
+};
