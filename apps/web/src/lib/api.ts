@@ -1,19 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { env } from "@/lib/env";
+import { ApiError, toApiError } from "@/lib/api-error";
 
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
+export { ApiError } from "@/lib/api-error";
 
 /**
- * Calls the Spring Boot API from a Server Component or route handler, attaching
- * the caller's Supabase access token as a bearer credential.
+ * Calls the Spring Boot API from a Server Component, Server Action or route
+ * handler, attaching the caller's Supabase access token as a bearer credential.
  */
 export async function apiFetch<T>(
   path: string,
@@ -39,11 +32,7 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new ApiError(
-      response.status,
-      body || `Request to ${path} failed with ${response.status}`,
-    );
+    throw await toApiError(response, path);
   }
 
   if (response.status === 204) {
@@ -52,3 +41,12 @@ export async function apiFetch<T>(
 
   return (await response.json()) as T;
 }
+
+export const apiPost = <T>(path: string, body: unknown) =>
+  apiFetch<T>(path, { method: "POST", body: JSON.stringify(body) });
+
+export const apiPut = <T>(path: string, body: unknown) =>
+  apiFetch<T>(path, { method: "PUT", body: JSON.stringify(body) });
+
+export const apiDelete = <T>(path: string) =>
+  apiFetch<T>(path, { method: "DELETE" });
