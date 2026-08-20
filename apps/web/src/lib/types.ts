@@ -531,3 +531,63 @@ export type TrendPoint = {
   expense: number;
   net: number;
 };
+/** What the next few weeks look like, built only on known recurring series. */
+export type Forecast = {
+  today: string;
+  end: string;
+  days: number;
+  currency: string;
+  balanceToday: number;
+  expectedIn: number;
+  expectedOut: number;
+  projectedBalance: number;
+  /** What can be spent today without the balance ever dipping below zero. */
+  safeToSpend: number;
+  low: LowPoint;
+  line: ForecastDay[];
+  upcoming: ExpectedCharge[];
+  /** Series we think are recurring; listed but kept out of every total. */
+  suspected: ExpectedCharge[];
+  /** Average daily spending no series accounts for. Reported, not projected. */
+  unpredicted: number;
+  basedOn: number;
+  mixedCurrencies: boolean;
+  hasAccounts: boolean;
+};
+
+/** The worst day in the window — the reason a forecast is worth having. */
+export type LowPoint = {
+  date: string;
+  daysAway: number;
+  balance: number;
+  shortfall: number;
+  goesNegative: boolean;
+  isAhead: boolean;
+};
+
+export type ForecastDay = {
+  date: string;
+  balance: number;
+  moneyIn: number;
+  moneyOut: number;
+  events: number;
+  hasEvents: boolean;
+};
+
+export type ExpectedCharge = {
+  seriesId: string;
+  name: string;
+  expectedOn: string;
+  daysAway: number;
+  amount: number;
+  direction: string;
+  currency: string;
+  categoryId: string | null;
+  categoryName: string | null;
+  cadence: string;
+  confirmed: boolean;
+  /** Expected before today and not yet arrived — rolled forward, not dropped. */
+  overdue: boolean;
+  amountVaries: boolean;
+  isIncome: boolean;
+};

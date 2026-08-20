@@ -136,6 +136,7 @@ All routes require a bearer token and are scoped to the caller.
 | `POST` | `/api/parse/retry` | Put failures back in the queue and read them again |
 | `POST` | `/api/parse/{messageId}/ignore` | Stop trying to read one message |
 | `GET` | `/api/insights` | Everything the dashboard shows for one month; `month=YYYY-MM` (defaults to the month you are in) |
+| `GET` | `/api/forecast` | What the balance does next; `days` (7–92, default 30, clamped not rejected) |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
@@ -621,6 +622,49 @@ a total that silently omits money is worse than an approximate one — and a
 small categories is folded into a single *"N smaller categories"* row, and
 *biggest changes* includes falls as well as rises, since spending less on
 something is the more useful half of the news.
+
+### Looking ahead
+
+The forecast answers one question: **will I run short, and when?** A month-end
+balance is the wrong answer to it. Someone can end the month comfortably and
+still bounce a payment on the 18th, because the rent, the card bill and the
+insurance all land before payday — and a forecast that only reports the end of
+the month would say everything was fine right up until it wasn't.
+
+So the headline is the **low point**: the worst day between now and the end of
+the window, named with its date and how far away it is. `safeToSpend` is
+measured against that day and not against the closing balance, because money
+that arrives on the 28th is no help on the 12th. It is floored at zero — *"you
+can safely spend minus four thousand"* is not advice, and someone already in
+trouble is told so in words instead.
+
+**Only confirmed series move the line.** A suspected pattern is listed under
+*"these might also happen"* and kept out of every total. Telling someone they
+owe money they do not is worse than staying quiet about a guess — they might
+cancel a plan over it. Dismissed series are gone entirely: having said *"this is
+not a subscription"*, nobody should find their money still committed to it.
+
+The series come from `RecurringService`, not a query of the forecast's own. Two
+pages disagreeing about which subscriptions you have is worse than either being
+slightly wrong — and reading the table directly would miss every suspected
+series, since those are found in the history at read time and never stored.
+
+**Discretionary spending is reported, never projected.** Groceries and coffees
+show up as `unpredicted`, an average day-to-day figure from the last 90 days,
+displayed *beside* the forecast. Folding a guess at future spending into the
+projection would make the number unverifiable: when it turned out wrong, the
+reader would have no way to tell which half was at fault.
+
+A late charge is rolled forward rather than dropped — a late rent is still rent
+— and flagged `overdue` so its date is not mistaken for a firm one. A weekly
+series produces four or five separate entries in a month, because collapsing
+them into one row would understate the month by a factor of four.
+
+The horizon is **clamped, not rejected**: `days=1` becomes 7 and `days=5000`
+becomes 92, and the response says which window it actually used. Ninety-two days
+is the cap because past three months a monthly series has drifted so far that
+the arrival dates are fiction — the forecast would still produce a number, and
+the number would still look precise, which is the problem.
 
 ### Money rules worth knowing
 
