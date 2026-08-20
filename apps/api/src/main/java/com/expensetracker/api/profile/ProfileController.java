@@ -38,16 +38,4 @@ public class ProfileController {
                 order by sort_order, name
                 """, CurrentUser.id());
     }
-
-    /** The caller's accounts with derived balances. */
-    @GetMapping("/accounts")
-    public List<Map<String, Object>> accounts() {
-        return jdbc.queryForList("""
-                select a.id, a.name, a.type, a.currency, a.opening_balance,
-                       account_balance(a.id) as balance, a.is_archived, a.sort_order
-                from accounts a
-                where a.user_id = ?
-                order by a.sort_order, a.name
-                """, CurrentUser.id());
-    }
 }
