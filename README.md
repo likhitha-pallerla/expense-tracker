@@ -116,6 +116,7 @@ All routes require a bearer token and are scoped to the caller.
 | `POST` | `/api/recurring/dismiss` | Stop suggesting a series |
 | `PUT` | `/api/recurring/{id}` | Rename, recategorise or pause one |
 | `DELETE` | `/api/recurring/{id}` | Stop tracking, or undo a dismissal |
+| `GET` | `/api/financial-health` | The health score with every driver behind it |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
@@ -267,6 +268,66 @@ spending totals, it does not stop the money leaving.
 
 Rejecting a suggestion and pausing a subscription are stored separately. They
 are different intentions, and collapsing them would lose one of them.
+
+### Financial health
+
+One score out of 100, built from five drivers and never from anything the app
+cannot see. Nothing is stored — it is recomputed on every read, like budgets and
+recurring payments, so fixing something changes the number immediately.
+
+| Driver | Weight | Measures |
+| --- | --- | --- |
+| Savings rate | 30 | What share of income survives the month |
+| Cash buffer | 25 | Months of spending your cash would cover |
+| Credit utilisation | 15 | How much of your credit limit is in use |
+| Budget discipline | 15 | Whether your own limits are holding |
+| Fixed commitments | 15 | How much of each month is already promised |
+
+**What cannot be measured is not counted — and not scored as zero.** Someone
+with no credit card has no credit risk; someone who has never opened the budgets
+page has not failed at budgeting. Scoring either as nil would tell a perfectly
+healthy user they were doing badly, and the suggested fix — take out a card,
+create a budget — would have nothing to do with the number that moved. So the
+driver is dropped and the remaining weights are renormalised. The response
+carries `coverage`, the share of the intended weighting that was measurable, and
+the page says so rather than quietly presenting a partial score as a full one.
+
+The rule cuts both ways: nobody is awarded fifteen points for *not* owning a
+credit card either.
+
+**The window is the last three complete calendar months.** The current one is
+always excluded — on the 2nd it would contribute two days of income against two
+days of spending, and a monthly average built from that is nonsense. A partial
+first month is dropped for the same reason: history starting on the 20th holds a
+third of a salary and would drag every average down for two months afterwards.
+
+**Under eight transactions or one complete month, nothing is scored at all.** A
+diagnosis drawn from three transactions would either alarm or reassure at
+random, so the page says what it needs instead of inventing a number.
+
+**Each driver is a curve, not a set of bands.** Thresholds would make the score
+jump fifteen points because one coffee moved a ratio across a boundary, and a
+number that lurches for no visible reason stops being believed. The points the
+curves pass through are the ones worth defending out loud: 20% saved, three
+months of cover, 30% utilisation.
+
+**Card debt is netted off the cash buffer.** Fifty thousand saved against forty
+thousand owed is not fifty thousand of cover, and a buffer that ignores the debt
+is exactly the reassurance that makes an emergency expensive.
+
+**Only confirmed subscriptions count as commitments.** An unconfirmed suggestion
+would make the score drift on its own as the detector changed its mind about a
+merchant — a number that moves without you doing anything is one you stop
+trusting.
+
+**Advice is ordered by points recoverable, not by which number looks worst.** A
+driver at 30 out of a weight of 15 is worth less attention than one at 60 out of
+a weight of 30, and telling you to fix the first would be advice that barely
+moves the score you are being shown.
+
+Budgets, cards and recurring payments are read through their own services rather
+than requeried here, so the health page can never claim a budget is blown that
+the budgets page shows as on track.
 
 ### Money rules worth knowing
 

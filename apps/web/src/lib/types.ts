@@ -314,3 +314,45 @@ export type Profile = {
   onboardedAt: string | null;
   newlyProvisioned: boolean;
 };
+
+export type HealthBand = "strong" | "good" | "fair" | "weak" | "poor" | "unknown";
+
+export type HealthGrade =
+  | "strong"
+  | "good"
+  | "fair"
+  | "needs_work"
+  | "at_risk"
+  | "unrated";
+
+/**
+ * One driver of the health score. `score` is null when there was nothing to
+ * measure it from — which is not the same as scoring zero, and is rendered
+ * differently.
+ */
+export type HealthSignal = {
+  key: string;
+  label: string;
+  score: number | null;
+  weight: number;
+  value: number | null;
+  unit: "percent" | "months" | "count";
+  band: HealthBand;
+  finding: string;
+  action: string;
+};
+
+export type HealthReport = {
+  score: number | null;
+  grade: HealthGrade;
+  headline: string;
+  coverage: number;
+  monthsObserved: number;
+  windowStart: string;
+  windowEnd: string;
+  currency: string;
+  signals: HealthSignal[];
+  priorities: string[];
+  wins: string[];
+  missing: string[];
+};
