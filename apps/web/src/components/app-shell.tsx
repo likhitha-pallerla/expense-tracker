@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 
 import { NavLinks } from "@/components/nav-links";
 import { SignOutButton } from "@/components/sign-out-button";
@@ -49,6 +50,12 @@ export async function AppShell({
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-3">
           <NavLinks reviewCount={reviewCount} alertCount={alertCount} />
           <div className="flex items-center gap-3">
+            <Link
+              href="/connections"
+              className="text-sm text-neutral-500 transition-colors hover:text-neutral-900 dark:hover:text-neutral-100"
+            >
+              Connections
+            </Link>
             <span className="hidden text-sm text-neutral-500 sm:inline">
               {user?.email}
             </span>

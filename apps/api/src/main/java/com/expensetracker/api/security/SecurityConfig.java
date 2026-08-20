@@ -67,6 +67,11 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/info", "/api/health").permitAll()
+                // The OAuth callback is a browser navigation from Google or
+                // Microsoft; it cannot carry our Authorization header. It
+                // identifies the user by looking up the one-time state it was
+                // issued with instead.
+                .requestMatchers(HttpMethod.GET, "/api/connections/callback/*").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth -> oauth
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(new SupabaseJwtAuthenticationConverter())));

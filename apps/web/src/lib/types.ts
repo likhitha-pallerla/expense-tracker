@@ -357,6 +357,30 @@ export type HealthReport = {
   missing: string[];
 };
 
+export type MailConnection = {
+  id: string;
+  provider: "gmail" | "outlook";
+  label: string | null;
+  address: string | null;
+  status: "active" | "needs_reauth" | "paused" | "error" | "revoked";
+  statusDetail: string;
+  connectedAt: string | null;
+  lastSyncedAt: string | null;
+  lastError: string | null;
+  needsReauth: boolean;
+};
+
+/**
+ * A provider we support, whether this deployment can actually offer it, and
+ * what the user has connected through it.
+ */
+export type MailProviderOption = {
+  provider: "gmail" | "outlook";
+  label: string;
+  configured: boolean;
+  connections: MailConnection[];
+};
+
 export type NotificationType =
   | "budget_threshold"
   | "card_due"

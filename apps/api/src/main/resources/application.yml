@@ -44,6 +44,37 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
 
+  encryption:
+    # 32 bytes, base64. Generate with: openssl rand -base64 32
+    # Absent is survivable: only mailbox connections need it.
+    key: ${TOKEN_ENCRYPTION_KEY:}
+
+  oauth:
+    # Must match the redirect URI registered with each provider exactly.
+    api-base: ${OAUTH_API_BASE:http://localhost:8080}
+    web-base: ${OAUTH_WEB_BASE:http://localhost:3000}
+    state-ttl-seconds: ${OAUTH_STATE_TTL_SECONDS:600}
+
+    gmail:
+      client-id: ${GOOGLE_CLIENT_ID:}
+      client-secret: ${GOOGLE_CLIENT_SECRET:}
+      # Endpoints are configurable so the whole handshake can be pointed at a
+      # stub and tested; they are not expected to change in production.
+      authorize-uri: ${GOOGLE_AUTHORIZE_URI:https://accounts.google.com/o/oauth2/v2/auth}
+      token-uri: ${GOOGLE_TOKEN_URI:https://oauth2.googleapis.com/token}
+      user-info-uri: ${GOOGLE_USERINFO_URI:https://openidconnect.googleapis.com/v1/userinfo}
+      revoke-uri: ${GOOGLE_REVOKE_URI:https://oauth2.googleapis.com/revoke}
+
+    outlook:
+      client-id: ${MICROSOFT_CLIENT_ID:}
+      client-secret: ${MICROSOFT_CLIENT_SECRET:}
+      authorize-uri: ${MICROSOFT_AUTHORIZE_URI:https://login.microsoftonline.com/common/oauth2/v2.0/authorize}
+      token-uri: ${MICROSOFT_TOKEN_URI:https://login.microsoftonline.com/common/oauth2/v2.0/token}
+      user-info-uri: ${MICROSOFT_USERINFO_URI:https://graph.microsoft.com/v1.0/me}
+      # Microsoft has no per-token revocation endpoint; signing out of all
+      # sessions is the nearest equivalent and is far more than was asked.
+      revoke-uri: ${MICROSOFT_REVOKE_URI:}
+
 management:
   endpoints:
     web:

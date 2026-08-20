@@ -123,6 +123,10 @@ All routes require a bearer token and are scoped to the caller.
 | `POST` | `/api/notifications/read-all` | Mark everything currently showing read |
 | `POST` | `/api/notifications/dismiss` | Hide an alert until its situation changes |
 | `POST` | `/api/notifications/restore` | Undo a dismissal |
+| `GET` | `/api/connections` | Every mail provider, whether it is set up, and what you have linked |
+| `POST` | `/api/connections/{provider}/start` | Begin linking a mailbox; returns the URL to send the browser to |
+| `GET` | `/api/connections/callback/{provider}` | Where the provider returns to. Public by necessity — see below |
+| `DELETE` | `/api/connections/{id}` | Unlink a mailbox and destroy its token |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
@@ -385,6 +389,75 @@ something new arrives.
 Read and dismissed are two nullable timestamps rather than one status, because
 dismissing implies having read: an enum would force a choice between them and
 lose the fact that a dismissed alert was also, at some point, seen.
+
+### Connecting a mailbox
+
+Most payment alerts already arrive by email. Linking a mailbox lets them become
+transactions without anyone typing them in.
+
+The browser never talks to Google or Microsoft on its own. The web app asks the
+API to start (it is the only side holding your session), the API hands back a
+URL, the browser follows it, and the provider returns to
+`/api/connections/callback/{provider}`. That callback cannot be authenticated —
+the provider will not carry a session cookie — so it trusts **nothing** in the
+request except the `state`, which it looks up. It always answers with a redirect
+back into the web app, carrying `?connected=gmail` or `?error=…`; an error page
+served from the API would strand you outside the app.
+
+`state` is a database row, not a signed token. A signed token cannot be
+revoked once issued and cannot be spent only once, and PKCE needs the code
+verifier to stay secret, which a token handed to the browser would not be. The
+row is spent in a single statement:
+
+```sql
+update oauth_states set consumed_at = now()
+where state = ? and consumed_at is null and expires_at > now()
+returning ...
+```
+
+A replay updates zero rows, so it fails without any extra check. The table has
+row-level security enabled with **no policies at all**, meaning no client key of
+any kind can read a code verifier.
+
+PKCE (S256) is used even though there is a client secret: the secret proves
+*which app* is asking, the verifier proves *which sign-in attempt* is being
+finished. Only together do they mean anything.
+
+Tokens are encrypted with AES-256-GCM before they are stored, with your user id
+as additional authenticated data — a row copied to another user simply fails to
+decrypt. The stored value is `v1.<iv>.<ciphertext>`; the version prefix exists so
+the key can be rotated later without a guessing game. If
+`TOKEN_ENCRYPTION_KEY` is missing the API still boots, and refuses only when a
+mailbox is actually linked; a nightly job should not die because an unrelated
+secret is absent.
+
+Gmail is asked for `access_type=offline` **and** `prompt=consent`. Without the
+second, reconnecting an already-approved account returns no refresh token and
+the link dies silently an hour later. A missing refresh token is therefore
+treated as a hard failure rather than a warning.
+
+Disconnecting **deletes the row** instead of soft-deleting it, breaking the
+convention used everywhere else in this codebase. That is deliberate:
+"disconnect" has to mean the credential is gone, not hidden. Transactions
+already imported stay, because they are yours rather than the mailbox's.
+
+Access is read-only in both providers (`gmail.readonly`, `Mail.Read`), so a
+compromise of this app could not send or delete mail.
+
+To enable it, set per provider — connecting stays switched off in the UI until
+they are present:
+
+| Variable | Notes |
+| --- | --- |
+| `TOKEN_ENCRYPTION_KEY` | 32 bytes, base64. `openssl rand -base64 32` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud console, OAuth client |
+| `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | Entra app registration |
+| `OAUTH_API_BASE` | Public URL of the API, for building the redirect URI |
+| `OAUTH_WEB_BASE` | Public URL of the web app, for the return trip |
+
+Register the redirect URI as `{OAUTH_API_BASE}/api/connections/callback/gmail`
+and `…/callback/outlook`. Microsoft has no per-token revoke endpoint, so
+`MICROSOFT_REVOKE_URI` is empty and revocation there is skipped.
 
 ### Money rules worth knowing
 
