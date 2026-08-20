@@ -40,7 +40,7 @@ public class DedupService {
     private static final String CANDIDATE_SQL = """
             select t.id, t.amount, t.currency, t.direction::text as direction, t.occurred_at,
                    t.account_id, t.merchant_id, m.normalized_name,
-                   t.external_ref, t.created_at,
+                   t.external_ref, t.created_at, t.import_batch_id,
                    coalesce(sc.provider::text,
                             case when t.import_batch_id is not null then 'csv_import' else 'manual' end
                    ) as source_provider
@@ -91,7 +91,7 @@ public class DedupService {
         for (Row candidate : candidates) {
             DedupVerdict verdict = DedupEngine.compare(row.toCandidate(), candidate.toCandidate());
             DedupVerdict.Decision decision =
-                    MergePolicy.decide(verdict, row.sourceProvider, candidate.sourceProvider);
+                    MergePolicy.decide(verdict, row.provenance(), candidate.provenance());
 
             if (decision == DedupVerdict.Decision.AUTO_MERGE) {
                 // Survivor is the older row: anything already pointing at a
@@ -115,6 +115,86 @@ public class DedupService {
         }
 
         return Outcome.none();
+    }
+
+    /**
+     * Finds an existing transaction carrying the same bank reference.
+     *
+     * <p>A bank reference is proof rather than inference: the same RRN or UTR
+     * is the same payment. The database enforces that with a unique index, so
+     * a second report of one has to be folded in <em>before</em> the insert is
+     * attempted — otherwise re-importing an overlapping statement fails
+     * outright instead of deduplicating, which is the single most common thing
+     * a user does.
+     *
+     * <p>Returns the survivor when the matched row has itself been merged away,
+     * so enrichment always lands on the row the user can actually see.
+     */
+    public Optional<UUID> findByReference(UUID userId, String externalRef) {
+        if (externalRef == null || externalRef.isBlank()) {
+            return Optional.empty();
+        }
+
+        return Optional.ofNullable(jdbc.query("""
+                select coalesce(t.merged_into_id, t.id)
+                from transactions t
+                where t.user_id = ? and t.external_ref = ? and t.deleted_at is null
+                limit 1
+                """, rs -> rs.next() ? rs.getObject(1, UUID.class) : null, userId, externalRef));
+    }
+
+    /**
+     * Folds a report that was never inserted into the transaction it duplicates.
+     *
+     * <p>Only gaps are filled, never overwritten: a bank SMS knows the account
+     * while an email knows the merchant, and the surviving row should carry
+     * whichever facts either source happened to have.
+     */
+    @Transactional
+    public Outcome absorb(UUID userId, UUID survivorId, UUID accountId, UUID categoryId,
+            UUID merchantId, String description) {
+        jdbc.update("""
+                update transactions
+                   set account_id  = coalesce(account_id, ?),
+                       category_id = coalesce(category_id, ?),
+                       merchant_id = coalesce(merchant_id, ?),
+                       description = coalesce(description, ?)
+                 where id = ? and user_id = ?
+                """, accountId, categoryId, merchantId, description, survivorId, userId);
+
+        return Outcome.absorbed(survivorId);
+    }
+
+    /**
+     * Scores a not-yet-saved transaction against what is already stored,
+     * writing nothing.     *
+     * <p>Used by the import preview so the user sees which rows would be
+     * treated as duplicates *before* committing an import, rather than
+     * discovering it afterwards.
+     */
+    public Optional<Assessment> assess(UUID userId, DedupCandidate probe, Provenance provenance) {
+        List<Row> candidates = findCandidates(userId, new UUID(0, 0), probe.amount(),
+                probe.currency(), probe.direction(), probe.occurredAt());
+
+        Assessment best = null;
+
+        for (Row candidate : candidates) {
+            DedupVerdict verdict = DedupEngine.compare(probe, candidate.toCandidate());
+            DedupVerdict.Decision decision =
+                    MergePolicy.decide(verdict, provenance, candidate.provenance());
+
+            if (decision == DedupVerdict.Decision.DISTINCT) {
+                continue;
+            }
+            if (best == null || verdict.score() > best.score()) {
+                best = new Assessment(
+                        decision == DedupVerdict.Decision.AUTO_MERGE ? "merge" : "review",
+                        verdict.score(),
+                        candidate.id);
+            }
+        }
+
+        return Optional.ofNullable(best);
     }
 
     /**
@@ -299,7 +379,7 @@ public class DedupService {
         return jdbc.query("""
                 select t.id, t.amount, t.currency, t.direction::text as direction, t.occurred_at,
                        t.account_id, t.merchant_id, m.normalized_name,
-                       t.external_ref, t.created_at,
+                       t.external_ref, t.created_at, t.import_batch_id,
                        coalesce(sc.provider::text,
                                 case when t.import_batch_id is not null then 'csv_import' else 'manual' end
                        ) as source_provider
@@ -314,11 +394,16 @@ public class DedupService {
     }
 
     private List<Row> findCandidates(UUID userId, Row row) {
-        Instant from = row.occurredAt.minus(DedupEngine.MAX_WINDOW);
-        Instant to = row.occurredAt.plus(DedupEngine.MAX_WINDOW);
+        return findCandidates(userId, row.id, row.amount, row.currency, row.direction, row.occurredAt);
+    }
+
+    private List<Row> findCandidates(UUID userId, UUID excludeId, java.math.BigDecimal amount,
+            String currency, String direction, Instant occurredAt) {
+        Instant from = occurredAt.minus(DedupEngine.MAX_WINDOW);
+        Instant to = occurredAt.plus(DedupEngine.MAX_WINDOW);
 
         return jdbc.query(CANDIDATE_SQL, DedupService::mapRow,
-                userId, row.id, row.amount, row.currency, row.direction,
+                userId, excludeId, amount, currency, direction,
                 java.sql.Timestamp.from(from), java.sql.Timestamp.from(to));
     }
 
@@ -334,6 +419,7 @@ public class DedupService {
                 rs.getString("normalized_name"),
                 rs.getString("external_ref"),
                 rs.getString("source_provider"),
+                rs.getObject("import_batch_id", UUID.class),
                 rs.getTimestamp("created_at").toInstant());
     }
 
@@ -370,11 +456,16 @@ public class DedupService {
             String normalizedMerchant,
             String externalRef,
             String sourceProvider,
+            UUID importBatchId,
             Instant createdAt) {
 
         DedupCandidate toCandidate() {
             return new DedupCandidate(id, amount, currency, direction, occurredAt,
                     accountId, merchantId, normalizedMerchant, externalRef, sourceProvider);
+        }
+
+        Provenance provenance() {
+            return new Provenance(sourceProvider, importBatchId);
         }
     }
 
@@ -399,6 +490,10 @@ public class DedupService {
             Summary b) {
     }
 
+    /** What screening *would* decide, for a row that has not been saved yet. */
+    public record Assessment(String action, double score, UUID matchesTransactionId) {
+    }
+
     /** What screening did, so the caller can tell the user. */
     public record Outcome(
             String action,
@@ -413,6 +508,12 @@ public class DedupService {
 
         public static Outcome merged(UUID survivor, UUID duplicate, DedupVerdict verdict) {
             return new Outcome("merged", survivor, duplicate, verdict.score(), verdict.signals());
+        }
+
+        /** A duplicate caught by its bank reference, before anything was written. */
+        public static Outcome absorbed(UUID survivor) {
+            return new Outcome("merged", survivor, null, 1.0,
+                    Map.of("externalRef", "equal", "mergedBy", "reference"));
         }
 
         public static Outcome review(UUID subject, UUID other, DedupVerdict verdict) {

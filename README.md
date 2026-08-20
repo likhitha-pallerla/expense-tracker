@@ -100,6 +100,8 @@ All routes require a bearer token and are scoped to the caller.
 | `POST` | `/api/duplicates/{id}/merge` | Confirm one payment; keeps the earlier row |
 | `POST` | `/api/duplicates/{id}/keep-both` | Two genuinely separate payments |
 | `POST` | `/api/duplicates/{id}/dismiss` | Stop asking about this pair |
+| `POST` | `/api/imports/preview` | Read a CSV and report what it *would* import; writes nothing |
+| `POST` | `/api/imports` | Import the file with a confirmed column mapping |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
@@ -129,6 +131,30 @@ Two rules stop the engine from destroying real data:
 
 Merging never deletes. The duplicate keeps its row and gains a `merged_into_id`
 pointing at the survivor, so any merge can be undone.
+
+### Importing a bank statement
+
+`/import` takes a CSV export from net banking. It is deliberately two steps: the
+preview reads the file and shows exactly what it understood — dates, amounts,
+directions, and which rows already exist — and writes nothing until confirmed. A
+wrong column guess would otherwise file real money against the wrong dates.
+
+Columns are detected from the header row and can be corrected in the UI. The
+detection handles split withdrawal/deposit columns (HDFC, ICICI, SBI), a single
+signed amount column, and an unsigned amount beside a `DR|CR` indicator (Axis,
+Kotak). Balance columns are never mistaken for the amount.
+
+Two rules keep an import honest:
+
+- **Rows sharing an `import_batch_id` are never merged with each other.** A
+  statement lists each payment exactly once, so two identical rows in one file
+  are two real payments — merging them would erase money the user spent.
+- **A repeated bank reference is folded in before insert, not after.** Bank
+  references are unique in the database, so re-importing an overlapping
+  statement enriches the existing rows instead of failing outright.
+
+Statement dates carry no time, so they are anchored at midday in the user's own
+timezone; no zone shift can move a purchase onto the adjacent day.
 
 ### Money rules worth knowing
 

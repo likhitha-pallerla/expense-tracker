@@ -11,28 +11,36 @@ package com.expensetracker.api.dedup;
  */
 public final class MergePolicy {
 
-    /** A transaction the user typed in themselves. */
-    public static final String MANUAL = "manual";
-
     private MergePolicy() {
     }
 
     /**
-     * Downgrades an automatic merge to a review when either side was entered by
-     * hand.
+     * Adjusts a verdict for provenance.
      *
-     * <p>Two identical purchases minutes apart at the same shop — a second
-     * coffee, a repeated fare — score high enough to auto-merge. For rows
-     * scraped from email and SMS that is the right call, because the same
-     * payment genuinely does arrive twice. But a user who types a transaction
-     * meant to type it, and silently folding it into another would delete
-     * deliberate input they would struggle to notice was gone.
+     * <p>Two rules override the score:
      *
-     * <p>An identical bank reference is exempt: that is proof of identity, not
-     * an inference, so it stands regardless of provenance.
+     * <p><b>Rows from the same uploaded file are never duplicates.</b> A bank
+     * statement lists each payment exactly once, so two matching lines in one
+     * file are two real payments — a coffee bought twice, a fare paid twice.
+     * Merging them would delete money the user actually spent, and queueing
+     * them would bury the user in questions after every import.
+     *
+     * <p><b>Hand-typed transactions are never merged automatically.</b> Two
+     * identical purchases minutes apart score high enough to auto-merge, which
+     * is right for rows scraped from email and SMS, because the same payment
+     * genuinely does arrive twice. But a user who types a transaction meant to,
+     * and silently folding it into another would destroy deliberate input they
+     * would struggle to notice was gone. Those go to review instead.
+     *
+     * <p>An identical bank reference is exempt from the second rule: that is
+     * proof of identity rather than an inference.
      */
     public static DedupVerdict.Decision decide(
-            DedupVerdict verdict, String providerA, String providerB) {
+            DedupVerdict verdict, Provenance a, Provenance b) {
+
+        if (a.sameImportAs(b)) {
+            return DedupVerdict.Decision.DISTINCT;
+        }
 
         if (verdict.decision() != DedupVerdict.Decision.AUTO_MERGE) {
             return verdict.decision();
@@ -42,7 +50,8 @@ public final class MergePolicy {
             return DedupVerdict.Decision.AUTO_MERGE;
         }
 
-        boolean anyManual = MANUAL.equals(providerA) || MANUAL.equals(providerB);
-        return anyManual ? DedupVerdict.Decision.REVIEW : DedupVerdict.Decision.AUTO_MERGE;
+        return a.isManual() || b.isManual()
+                ? DedupVerdict.Decision.REVIEW
+                : DedupVerdict.Decision.AUTO_MERGE;
     }
 }

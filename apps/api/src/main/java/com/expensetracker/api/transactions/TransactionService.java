@@ -115,6 +115,18 @@ public class TransactionService {
 
     @Transactional
     public TransactionView create(UUID userId, TransactionRequest request) {
+        return create(userId, request, null).view();
+    }
+
+    /**
+     * Creates a transaction, optionally attributing it to a CSV import.
+     *
+     * <p>The batch id matters beyond bookkeeping: it tells the dedup policy
+     * that two rows came from the same statement, and a statement lists each
+     * payment exactly once.
+     */
+    @Transactional
+    public Created create(UUID userId, TransactionRequest request, UUID importBatchId) {
         TransactionKind kind = request.resolvedKind();
         TransactionDirection direction = request.resolvedDirection();
 
@@ -125,26 +137,44 @@ public class TransactionService {
         UUID merchantId = merchants.resolve(userId, request.merchant()).orElse(null);
         UUID categoryId = resolveCategory(userId, request.categoryId(), merchantId);
 
-        UUID id = insert(userId, kind, direction, request, merchantId, categoryId);
+        // A bank reference is proof of identity and the database enforces it as
+        // unique, so a second report of one is folded in before the insert is
+        // attempted rather than after — otherwise re-importing an overlapping
+        // statement would fail outright instead of deduplicating.
+        String reference = request.externalRefOrNull();
+        if (reference != null) {
+            Optional<UUID> existing = dedup.findByReference(userId, reference);
+            if (existing.isPresent()) {
+                DedupService.Outcome absorbed = dedup.absorb(userId, existing.get(),
+                        request.accountId(), categoryId, merchantId, request.description());
+                return new Created(get(userId, existing.get()), absorbed);
+            }
+        }
+
+        UUID id = insert(userId, kind, direction, request, merchantId, categoryId, importBatchId);
 
         merchants.rememberCategory(userId, merchantId, request.categoryId());
 
         // If this turned out to be a second report of an existing payment, show
         // the row that survived rather than the one now hidden behind it.
         DedupService.Outcome outcome = dedup.screen(userId, id);
-        return get(userId, outcome.isMerged() ? outcome.survivorId() : id);
+        return new Created(get(userId, outcome.isMerged() ? outcome.survivorId() : id), outcome);
+    }
+
+    /** A created transaction plus what deduplication made of it. */
+    public record Created(TransactionView view, DedupService.Outcome dedup) {
     }
 
     private UUID insert(UUID userId, TransactionKind kind, TransactionDirection direction,
-            TransactionRequest request, UUID merchantId, UUID categoryId) {
+            TransactionRequest request, UUID merchantId, UUID categoryId, UUID importBatchId) {
         return jdbc.queryForObject("""
                 insert into transactions (
                     user_id, account_id, category_id, merchant_id,
                     kind, direction, amount, currency, base_amount,
                     occurred_at, description, notes, tags,
-                    external_ref, is_excluded, is_recurring)
+                    external_ref, is_excluded, is_recurring, import_batch_id)
                 values (?, ?, ?, ?, ?::transaction_kind, ?::transaction_direction,
-                        ?, ?, ?, ?, ?, ?, ?, ?, coalesce(?, false), coalesce(?, false))
+                        ?, ?, ?, ?, ?, ?, ?, ?, coalesce(?, false), coalesce(?, false), ?)
                 returning id
                 """,
                 UUID.class,
@@ -165,7 +195,8 @@ public class TransactionService {
                 request.tagsOrEmpty(),
                 request.externalRefOrNull(),
                 request.isExcluded(),
-                request.isRecurring());
+                request.isRecurring(),
+                importBatchId);
     }
 
     /** Falls back to the merchant's remembered category when none was given. */

@@ -96,6 +96,69 @@ export type DuplicatePair = {
   b: DuplicateSide;
 };
 
+/**
+ * Which CSV column holds what. Zero-based; -1 means "not present".
+ * Mirrors the API's ImportMapping record exactly — it is round-tripped.
+ */
+export type ImportMapping = {
+  dateColumn: number;
+  descriptionColumn: number;
+  amountColumn: number;
+  debitColumn: number;
+  creditColumn: number;
+  referenceColumn: number;
+  typeColumn: number;
+  dayFirst: boolean;
+};
+
+/** The roles a column can be assigned, in the order they are shown. */
+export const IMPORT_ROLES = [
+  { key: "dateColumn", label: "Date", required: true },
+  { key: "descriptionColumn", label: "Description", required: false },
+  { key: "amountColumn", label: "Amount (signed)", required: false },
+  { key: "debitColumn", label: "Money out", required: false },
+  { key: "creditColumn", label: "Money in", required: false },
+  { key: "typeColumn", label: "Dr/Cr indicator", required: false },
+  { key: "referenceColumn", label: "Reference", required: false },
+] as const;
+
+export type ImportRole = (typeof IMPORT_ROLES)[number]["key"];
+
+export type ImportPreviewRow = {
+  rowNumber: number;
+  occurredAt: string | null;
+  description: string | null;
+  amount: number | null;
+  direction: TransactionDirection | null;
+  reference: string | null;
+  error: string | null;
+  /** "merge", "review", or null when this row looks new. */
+  duplicateAction: string | null;
+  duplicateScore: number | null;
+  duplicateOf: string | null;
+};
+
+export type ImportPreview = {
+  mapping: ImportMapping;
+  headers: string[];
+  rows: ImportPreviewRow[];
+  usable: boolean;
+  problem: string | null;
+  totalRows: number;
+  validRows: number;
+  duplicateRows: number;
+  netAmount: number;
+};
+
+export type ImportResult = {
+  batchId: string;
+  imported: number;
+  merged: number;
+  queuedForReview: number;
+  skipped: number;
+  failed: number;
+};
+
 export type Category = {  id: string;
   parent_id: string | null;
   name: string;
