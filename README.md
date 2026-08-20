@@ -135,6 +135,7 @@ All routes require a bearer token and are scoped to the caller.
 | `GET` | `/api/parse/unread` | Alerts we could not read, and why; `limit` (default 50, max 200) |
 | `POST` | `/api/parse/retry` | Put failures back in the queue and read them again |
 | `POST` | `/api/parse/{messageId}/ignore` | Stop trying to read one message |
+| `GET` | `/api/insights` | Everything the dashboard shows for one month; `month=YYYY-MM` (defaults to the month you are in) |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
@@ -571,6 +572,55 @@ bounded (`{2,60}` rather than `+`) and every match runs against `Bounded`, a
 `CharSequence` that gives up after two million character reads. Java 21 turns
 the textbook catastrophic patterns into merely *quadratic* ones rather than
 exponential, but quadratic across a megabyte body is still minutes of a core.
+
+### The month view
+
+The dashboard is **one endpoint, not four**. Split across separate calls, the
+totals and the category breakdown could be built from different snapshots of the
+ledger and quietly disagree — and the first thing anyone does with a dashboard
+is check whether the parts add up.
+
+**Comparisons are like for like.** On the 12th, this month is compared against
+the *first 12 days* of last month, not all 30. Comparing a part-month against a
+whole one would tell every user, every month, that their spending had collapsed
+— and then reverse the verdict on the last day. The number of days being
+compared is stated on the page rather than left to be inferred. When this month
+has more days than last month had, the count is clamped: 31 days of March is
+compared against all 28 of February, because there is nothing else to compare
+it to.
+
+**A percentage needs something to be a percentage of.** Going from nothing to
+₹4,000 is not "up 100%" and not "up infinitely"; the API returns `null` and the
+page says *"nothing last month"*. Only words can say "this is the first time".
+
+**Projection is withheld early.** Before the 5th, a straight-line pace off two
+days of data would swing wildly and read as authority. `projectedExpense` is
+`null` until there is enough month to extrapolate from, and never appears on a
+month that has already ended.
+
+**Empty months are drawn, not skipped.** A trend line that closes up a gap turns
+*"I recorded nothing in June"* into *"I spent evenly through June"*. Months with
+no data are filled with zeroes and rendered as empty columns.
+
+**Months are bucketed in the user's timezone**, via
+`date_trunc('month', occurred_at at time zone ?)`. Bucketing in UTC moves a
+00:30 IST payment into the previous month — and the user, who was awake and
+remembers spending it, would be told it never happened.
+
+**"You have no history" is not the same as "this month is empty".** `hasHistory`
+is asked of the whole ledger, so someone paging back to a quiet month sees a
+quiet month rather than the first-run instructions. `earliestMonth` and
+`currentMonth` come back too, so the page knows when to stop offering another
+step in either direction — and `currentMonth` comes from the server because the
+browser's clock may be in a different zone from the user's settings.
+
+Transfers, excluded rows, deleted rows and rows merged into a duplicate are all
+left out of every figure. Spending in another currency is still **added in** —
+a total that silently omits money is worse than an approximate one — and a
+`mixedCurrencies` flag lets the page admit the sum is rough. The long tail of
+small categories is folded into a single *"N smaller categories"* row, and
+*biggest changes* includes falls as well as rises, since spending less on
+something is the more useful half of the news.
 
 ### Money rules worth knowing
 

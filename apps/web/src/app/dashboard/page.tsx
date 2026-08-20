@@ -1,57 +1,59 @@
 import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
+import {
+  Breakdown,
+  Caveats,
+  Headline,
+  MonthNav,
+  Movers,
+  TopMerchants,
+  Trend,
+} from "@/components/insights-view";
 import { Card, EmptyState } from "@/components/ui/form";
 import { apiFetch } from "@/lib/api";
-import { formatDate, formatMoney, formatSigned } from "@/lib/format";
-import type {
-  Account,
-  Profile,
-  Transaction,
-  TransactionPage,
-} from "@/lib/types";
+import type { Insights, Profile } from "@/lib/types";
 
 export const metadata = { title: "Dashboard" };
 
-/** Start of the current month in UTC, matching the API's instant filters. */
-function monthStart(): string {
-  const now = new Date();
-  return new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-  ).toISOString();
+type SearchParams = Record<string, string | string[] | undefined>;
+
+/**
+ * Reads the month out of the URL, if there is one.
+ *
+ * Left to the API when absent: only the server knows which month the user is
+ * actually in, because it knows their timezone and this process does not.
+ */
+function monthParam(params: SearchParams): string | null {
+  const value = params.month;
+  return typeof value === "string" && /^\d{4}-\d{2}$/.test(value) ? value : null;
 }
 
-type Data = {
-  profile: Profile;
-  accounts: Account[];
-  recent: TransactionPage;
-  month: TransactionPage;
-};
-
-async function load(): Promise<
-  { ok: true; data: Data } | { ok: false; error: string }
+async function load(
+  month: string | null,
+): Promise<
+  { ok: true; profile: Profile; insights: Insights } | { ok: false; error: string }
 > {
   try {
     // /api/me provisions the profile, categories and default account on first
     // call, so it must resolve before anything else is requested.
     const profile = await apiFetch<Profile>("/api/me");
-
-    const [accounts, recent, month] = await Promise.all([
-      apiFetch<Account[]>("/api/accounts"),
-      apiFetch<TransactionPage>("/api/transactions?limit=5"),
-      apiFetch<TransactionPage>(
-        `/api/transactions?from=${monthStart()}&kind=expense&limit=1`,
-      ),
-    ]);
-
-    return { ok: true, data: { profile, accounts, recent, month } };
+    const insights = await apiFetch<Insights>(
+      month ? `/api/insights?month=${month}` : "/api/insights",
+    );
+    return { ok: true, profile, insights };
   } catch (error) {
     return { ok: false, error: (error as Error).message };
   }
 }
 
-export default async function DashboardPage() {
-  const result = await load();
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const params = await searchParams;
+  const result = await load(monthParam(params));
 
   if (!result.ok) {
     return (
@@ -69,109 +71,79 @@ export default async function DashboardPage() {
     );
   }
 
-  const { profile, accounts, recent, month } = result.data;
-  const netWorth = accounts.reduce((sum, account) => sum + account.balance, 0);
-  // Expenses are stored as negative signed amounts; flip for display.
-  const spentThisMonth = -month.netAmount;
+  const { profile, insights } = result;
+
+  if (!insights.hasHistory) {
+    return (
+      <AppShell
+        title={profile.displayName ? `Hi, ${profile.displayName}` : "Dashboard"}
+        description="Nothing recorded yet."
+      >
+        <Card title="Getting started">
+          <EmptyState>
+            There is nothing to show until some money moves.
+          </EmptyState>
+          <ul className="mt-4 space-y-2 text-sm">
+            <li>
+              <Link href="/connections" className="underline underline-offset-4">
+                Connect a mailbox
+              </Link>{" "}
+              and we will read your bank alerts for you.
+            </li>
+            <li>
+              <Link href="/import" className="underline underline-offset-4">
+                Import a statement
+              </Link>{" "}
+              if you would rather start with history.
+            </li>
+            <li>
+              <Link href="/transactions" className="underline underline-offset-4">
+                Add one by hand
+              </Link>{" "}
+              to see how it looks.
+            </li>
+          </ul>
+        </Card>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell
       title={profile.displayName ? `Hi, ${profile.displayName}` : "Dashboard"}
       description="A quick read on where your money went."
     >
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card title="Net worth">
-          <p className="font-mono text-2xl">
-            {formatMoney(netWorth, profile.baseCurrency)}
-          </p>
-          <p className="mt-1 text-xs text-neutral-500">
-            Across {accounts.length} account{accounts.length === 1 ? "" : "s"}
-          </p>
-        </Card>
+      <div className="space-y-4">
+        <MonthNav insights={insights} />
+        <Headline insights={insights} />
 
-        <Card title="Spent this month">
-          <p className="font-mono text-2xl">
-            {formatMoney(spentThisMonth, profile.baseCurrency)}
-          </p>
-          <p className="mt-1 text-xs text-neutral-500">
-            {month.total} expense{month.total === 1 ? "" : "s"} so far
-          </p>
-        </Card>
-
-        <Card title="Transactions">
-          <p className="font-mono text-2xl">{recent.total}</p>
-          <p className="mt-1 text-xs text-neutral-500">Recorded in total</p>
-        </Card>
-      </div>
-
-      <div className="mt-4">
-        <Card
-          title="Recent activity"
-          action={
-            <Link
-              href="/transactions"
-              className="text-sm text-neutral-500 underline underline-offset-4"
-            >
-              View all
-            </Link>
-          }
-        >
-          {recent.items.length === 0 ? (
+        {insights.totals.isEmpty ? (
+          <Card title="Where it went">
             <EmptyState>
-              No transactions yet.{" "}
-              <Link href="/transactions" className="underline underline-offset-4">
-                Add your first one
-              </Link>
-              .
+              Nothing recorded in {insights.label}.
             </EmptyState>
-          ) : (
-            <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
-              {recent.items.map((transaction) => (
-                <RecentRow key={transaction.id} transaction={transaction} />
-              ))}
-            </ul>
-          )}
-        </Card>
-      </div>
+          </Card>
+        ) : (
+          <>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Breakdown insights={insights} />
+              <div className="space-y-4">
+                <Movers insights={insights} />
+                <TopMerchants insights={insights} />
+              </div>
+            </div>
+          </>
+        )}
 
-      {accounts.length === 0 && (
-        <p className="mt-4 text-sm text-neutral-500">
-          Start by{" "}
-          <Link href="/accounts" className="underline underline-offset-4">
-            adding an account
-          </Link>{" "}
-          so balances have somewhere to live.
-        </p>
-      )}
-    </AppShell>
-  );
-}
+        <Trend insights={insights} />
+        <Caveats insights={insights} />
 
-function RecentRow({ transaction }: { transaction: Transaction }) {
-  return (
-    <li className="flex items-center justify-between gap-4 py-2 text-sm">
-      <div className="min-w-0">
-        <p className="truncate">
-          {transaction.merchantName ??
-            transaction.description ??
-            (transaction.kind === "transfer" ? "Transfer" : "Untitled")}
-        </p>
         <p className="text-xs text-neutral-500">
-          {formatDate(transaction.occurredAt)}
-          {transaction.accountName && ` · ${transaction.accountName}`}
+          <Link href="/transactions" className="underline underline-offset-4">
+            See every transaction
+          </Link>
         </p>
       </div>
-      <span
-        className={`font-mono ${
-          transaction.kind === "transfer"
-            ? "text-neutral-500"
-            : transaction.signedAmount < 0
-              ? "text-red-600 dark:text-red-400"
-              : "text-emerald-600 dark:text-emerald-400"
-        }`}
-      >
-        {formatSigned(transaction.signedAmount, transaction.currency)}
-      </span>
-    </li>
+    </AppShell>
   );
 }

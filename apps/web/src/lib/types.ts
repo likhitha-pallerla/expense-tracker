@@ -457,3 +457,77 @@ export type Notification = {
   readAt: string | null;
   dismissedAt: string | null;
 };
+
+/**
+ * A month's spending in one shape.
+ *
+ * Deliberately one response rather than several: totals and the category
+ * breakdown built from separate calls could disagree, and the first thing
+ * anyone checks on a dashboard is whether the parts add up.
+ */
+export type Insights = {
+  month: string;
+  label: string;
+  currency: string;
+  /** True while the month is still running, so figures are partial. */
+  partial: boolean;
+  daysElapsed: number;
+  daysInMonth: number;
+  /** How many days of the previous month the comparison covers. */
+  previousDaysCounted: number;
+  totals: Totals;
+  previous: Totals;
+  incomeChange: number | null;
+  expenseChange: number | null;
+  /** Where the month looks likely to end, or null when it is too early to say. */
+  projectedExpense: number | null;
+  uncategorisedAmount: number;
+  categories: CategorySlice[];
+  movers: CategorySlice[];
+  merchants: MerchantSlice[];
+  trend: TrendPoint[];
+  /** The month holds more than one currency, so the totals are approximate. */
+  mixedCurrencies: boolean;
+  /** Whether this user has ever recorded anything, not just in this month. */
+  hasHistory: boolean;
+  earliestMonth: string | null;
+  /** The month it is now where the user is — the browser's clock may differ. */
+  currentMonth: string;
+};
+
+export type Totals = {
+  income: number;
+  expense: number;
+  net: number;
+  count: number;
+  isEmpty: boolean;
+};
+
+export type CategorySlice = {
+  categoryId: string | null;
+  name: string;
+  colour: string | null;
+  amount: number;
+  previousAmount: number;
+  delta: number;
+  /** Null when the previous amount was zero — no honest percentage exists. */
+  percentChange: number | null;
+  share: number;
+  count: number;
+  isUncategorised: boolean;
+};
+
+export type MerchantSlice = {
+  merchantId: string | null;
+  name: string;
+  amount: number;
+  count: number;
+};
+
+export type TrendPoint = {
+  month: string;
+  label: string;
+  income: number;
+  expense: number;
+  net: number;
+};
