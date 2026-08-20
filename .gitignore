@@ -1,0 +1,51 @@
+# ---- Secrets: never commit ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+
+# ---- Java / Maven ----
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+
+# ---- Node ----
+node_modules/
+.pnpm-store/
+npm-debug.log*
+yarn-error.log*
+.eslintcache
+
+# ---- Next.js ----
+.next/
+out/
+next-env.d.ts
+.vercel
+
+# ---- Expo / React Native ----
+.expo/
+.expo-shared/
+*.apk
+*.aab
+*.ipa
+
+# ---- Build output ----
+dist/
+build/
+coverage/
+
+# ---- IDE / OS ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.iml
+.DS_Store
+Thumbs.db
+
+# ---- Local tooling ----
+/tools/
+*.log
