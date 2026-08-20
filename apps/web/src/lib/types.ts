@@ -178,6 +178,44 @@ export type BudgetPeriod = (typeof BUDGET_PERIODS)[number]["value"];
 
 export type BudgetStatus = "on_track" | "warning" | "over" | "upcoming" | "ended";
 
+export type CardStatus =
+  | "clear"
+  | "tracking"
+  | "due"
+  | "minimum_met"
+  | "paid"
+  | "overdue";
+
+export type Card = {
+  accountId: string;
+  name: string;
+  last4: string | null;
+  currency: string;
+  isArchived: boolean;
+
+  creditLimit: number | null;
+  outstanding: number;
+  available: number | null;
+  utilisation: number | null;
+
+  billingDay: number | null;
+  dueDay: number | null;
+  statementDate: string | null;
+  dueDate: string | null;
+  nextStatement: string | null;
+  daysUntilDue: number | null;
+
+  statementBalance: number | null;
+  minimumDue: number | null;
+  lastStatementAt: string | null;
+
+  currentSpend: number | null;
+  paidSinceStatement: number | null;
+  remainingDue: number | null;
+  minimumRemaining: number | null;
+  status: CardStatus;
+};
+
 export type Budget = {
   id: string;
   name: string | null;

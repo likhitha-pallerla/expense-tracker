@@ -106,6 +106,10 @@ All routes require a bearer token and are scoped to the caller.
 | `GET` | `/api/budgets/{id}` | One budget with the same computed figures |
 | `POST` `PUT` | `/api/budgets[/{id}]` | Create / replace a budget |
 | `DELETE` | `/api/budgets/{id}` | Delete a budget |
+| `GET` | `/api/cards` | Credit cards with live outstanding, utilisation and dues |
+| `GET` | `/api/cards/{accountId}` | One card |
+| `PUT` | `/api/cards/{accountId}` | Save the bank's figures: limit, billing/due day, statement |
+| `DELETE` | `/api/cards/{accountId}` | Clear those figures; the account and its transactions stay |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
@@ -183,6 +187,36 @@ excluded, soft-deleted rows, and rows merged away as duplicates.
 
 Status comes from the user's own alert thresholds rather than a fixed rule —
 the point of setting them is to decide when you want to be told.
+
+### Credit cards
+
+A credit card *is* an account, so cards are addressed by their account id and
+share the same transactions and balance machinery. What the module adds is the
+split between two kinds of number:
+
+| Source | Fields |
+| --- | --- |
+| The ledger | outstanding, available credit, utilisation, spend this cycle, payments made |
+| The bank | credit limit, statement and due day, statement balance, minimum due |
+
+They are kept apart deliberately. Collapsing them would leave the user unable to
+tell whether a figure came from their bank or from their own bookkeeping.
+
+- **Billing days clamp, they do not spill.** A card billed on the 31st bills on
+  the 28th in February — and, because each date is recomputed from the day
+  number rather than added to the clamped one, March still bills on the 31st.
+- **A bill is never due the moment it is generated.** A card billed and due on
+  the 10th gives until the 10th of the following month.
+- **Payments are only credited from the day *after* the statement date.** A
+  payment made on the statement day may already be inside the balance the bank
+  quoted; counting it twice would say "paid" when it is not, and that costs a
+  late fee. Over-reporting a debt merely prompts the user to check.
+- **Payments count even when marked excluded.** That flag keeps a row out of
+  spending analytics; it does not mean the money never moved.
+
+When no statement has been entered the status says `tracking` rather than
+guessing — claiming a card is clear because nothing was entered would be worse
+than admitting there is nothing to compare against.
 
 ### Money rules worth knowing
 
