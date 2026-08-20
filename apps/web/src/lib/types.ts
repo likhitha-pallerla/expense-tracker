@@ -397,6 +397,40 @@ export type SyncRun = {
   summary: string;
 };
 
+/** What one pass over the waiting alerts did. */
+export type ParseResult = {
+  read: number;
+  imported: number;
+  merged: number;
+  ignored: number;
+  failed: number;
+  /** Built by the API; the counts read as nonsense apart. */
+  summary: string;
+};
+
+export type ParseQueue = {
+  pending: number;
+  failed: number;
+  parsed: number;
+  hasWork: boolean;
+};
+
+/**
+ * An alert we stored but could not turn into a transaction.
+ *
+ * The snippet travels with the reason because "could not find the amount" only
+ * makes sense next to the message it came from.
+ */
+export type UnreadMessage = {
+  id: string;
+  subject: string | null;
+  sender: string | null;
+  receivedAt: string | null;
+  ruleName: string | null;
+  reason: string | null;
+  snippet: string | null;
+};
+
 export type NotificationType =
   | "budget_threshold"
   | "card_due"

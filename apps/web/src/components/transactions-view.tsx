@@ -18,7 +18,7 @@ import type {
 
 const SOURCE_LABELS: Record<Transaction["source"], string> = {
   manual: "Manual",
-  auto: "Auto",
+  auto: "From an alert",
   import: "Imported",
 };
 

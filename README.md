@@ -130,6 +130,11 @@ All routes require a bearer token and are scoped to the caller.
 | `POST` | `/api/sync` | Check every connected mailbox for new payment alerts |
 | `POST` | `/api/sync/{connectionId}` | Check one mailbox |
 | `GET` | `/api/sync/runs` | History of past checks; `limit` (default 10) |
+| `POST` | `/api/parse` | Turn every stored alert into transactions |
+| `GET` | `/api/parse/queue` | How many alerts are waiting, failed, already read |
+| `GET` | `/api/parse/unread` | Alerts we could not read, and why; `limit` (default 50, max 200) |
+| `POST` | `/api/parse/retry` | Put failures back in the queue and read them again |
+| `POST` | `/api/parse/{messageId}/ignore` | Stop trying to read one message |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
@@ -508,6 +513,64 @@ one firing means the same thing. Naming one would let the other throw.
 `app.mail.gmail-base` and `app.mail.graph-base` exist so sync can be pointed at
 a test double; they are separate from the OAuth settings because they answer a
 different question — where to ask, rather than proving who is asking.
+
+### Reading alerts
+
+Fetching mail and reading it are **two endpoints, one button**. They are apart
+in the API because they fail for unrelated reasons and are worth retrying at
+different times: fetching depends on Gmail being reachable and costs quota,
+reading depends only on the rules and costs nothing. A user whose bank we do not
+understand yet can press *try again* after an update without spending another
+provider request. On the page they are one press, because nobody wants to be
+told "12 alerts fetched" and then have to hunt for a second button.
+
+**The rules are data, not code.** `parser_rules` holds a match pattern and a map
+of field name to `{pattern, group, as}`, seeded by `V12__parsing.sql`. Alert
+formats change without warning and differ per issuer; when a bank reformats its
+UPI mail the fix should be a row, not a redeploy. It also leaves room for a user
+to add a rule for a bank we have never seen. Rules are tried in
+`(built-in last), priority, name` order, so a user's own rule beats every
+built-in one regardless of its priority number — they know their bank better
+than we do. A rule that fails to compile is logged and skipped; one bad row must
+not stop every other rule from working.
+
+`SeededRules` in the test suite parses the rules **out of the migration file**
+and runs the real parser against them, so the tests cannot drift from what
+actually ships.
+
+**A rule that matches but extracts nothing does not end the search.** It is
+remembered as a near miss and the remaining rules still get a turn; the near
+miss is only reported if nothing else succeeds. Without this a broad catch-all
+would shadow every specific rule behind it.
+
+**Some things are deliberately not guessed.** Two accounts ending in the same
+four digits means the transaction is created with *no* account rather than the
+wrong one — visible and fixable, instead of neither. A merchant capture with no
+letters in it is dropped. A reference made of one repeated character is
+discarded, because it would wrongly merge unrelated payments. A date more than
+21 days before the mail arrived is treated as noise and the arrival date is used
+instead, with the substitution recorded in `parse_notes`.
+
+**Parsing is safely re-runnable.** A partial unique index on
+`transactions(raw_message_id)` is what makes that true: a message can be read
+again, but it cannot produce a second transaction. Dedup still runs on the way
+in, so the same payment arriving as both mail and SMS is merged rather than
+counted twice — which is why `source_id` is written *at insert time* and not
+patched afterwards, since dedup weighs provenance and would otherwise judge a
+mail-derived row by the wrong rule.
+
+**Failures are shown, not hidden.** A message that could not be read is listed
+on `/connections` with the reason and a snippet, because the alternative is
+money quietly missing from the totals. The reason is written for a person: the
+exception text is a stack-trace detail and never reaches the page. Each one can
+be ignored, which keeps it out of the list without deleting it, so the decision
+stays reversible.
+
+Regex input is attacker-influenced — anyone can send you mail — so patterns are
+bounded (`{2,60}` rather than `+`) and every match runs against `Bounded`, a
+`CharSequence` that gives up after two million character reads. Java 21 turns
+the textbook catastrophic patterns into merely *quadratic* ones rather than
+exponential, but quadratic across a megabyte body is still minutes of a core.
 
 ### Money rules worth knowing
 

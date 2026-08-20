@@ -115,18 +115,24 @@ public class TransactionService {
 
     @Transactional
     public TransactionView create(UUID userId, TransactionRequest request) {
-        return create(userId, request, null).view();
+        return create(userId, request, Origin.MANUAL).view();
+    }
+
+    @Transactional
+    public Created create(UUID userId, TransactionRequest request, UUID importBatchId) {
+        return create(userId, request, Origin.csvImport(importBatchId));
     }
 
     /**
-     * Creates a transaction, optionally attributing it to a CSV import.
+     * Creates a transaction and records where it came from.
      *
-     * <p>The batch id matters beyond bookkeeping: it tells the dedup policy
-     * that two rows came from the same statement, and a statement lists each
-     * payment exactly once.
+     * <p>Origin matters beyond bookkeeping: it tells the dedup policy that two
+     * rows came from the same statement (and a statement lists each payment
+     * exactly once), or that a row came from a mail alert (which the same
+     * payment on a statement should fold into rather than sit beside).
      */
     @Transactional
-    public Created create(UUID userId, TransactionRequest request, UUID importBatchId) {
+    public Created create(UUID userId, TransactionRequest request, Origin origin) {
         TransactionKind kind = request.resolvedKind();
         TransactionDirection direction = request.resolvedDirection();
 
@@ -151,7 +157,7 @@ public class TransactionService {
             }
         }
 
-        UUID id = insert(userId, kind, direction, request, merchantId, categoryId, importBatchId);
+        UUID id = insert(userId, kind, direction, request, merchantId, categoryId, origin);
 
         merchants.rememberCategory(userId, merchantId, request.categoryId());
 
@@ -166,15 +172,16 @@ public class TransactionService {
     }
 
     private UUID insert(UUID userId, TransactionKind kind, TransactionDirection direction,
-            TransactionRequest request, UUID merchantId, UUID categoryId, UUID importBatchId) {
+            TransactionRequest request, UUID merchantId, UUID categoryId, Origin origin) {
         return jdbc.queryForObject("""
                 insert into transactions (
                     user_id, account_id, category_id, merchant_id,
                     kind, direction, amount, currency, base_amount,
                     occurred_at, description, notes, tags,
-                    external_ref, is_excluded, is_recurring, import_batch_id)
+                    external_ref, is_excluded, is_recurring, import_batch_id,
+                    source_id, raw_message_id)
                 values (?, ?, ?, ?, ?::transaction_kind, ?::transaction_direction,
-                        ?, ?, ?, ?, ?, ?, ?, ?, coalesce(?, false), coalesce(?, false), ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, coalesce(?, false), coalesce(?, false), ?, ?, ?)
                 returning id
                 """,
                 UUID.class,
@@ -196,7 +203,9 @@ public class TransactionService {
                 request.externalRefOrNull(),
                 request.isExcluded(),
                 request.isRecurring(),
-                importBatchId);
+                origin.importBatchId(),
+                origin.sourceId(),
+                origin.rawMessageId());
     }
 
     /** Falls back to the merchant's remembered category when none was given. */
