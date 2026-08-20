@@ -75,6 +75,12 @@ app:
       # sessions is the nearest equivalent and is far more than was asked.
       revoke-uri: ${MICROSOFT_REVOKE_URI:}
 
+  mail:
+    # Where the mail APIs live. Configurable only so sync can be pointed at a
+    # stub and driven end to end without a real mailbox; never set in production.
+    gmail-base: ${GMAIL_API_BASE:https://gmail.googleapis.com}
+    graph-base: ${GRAPH_API_BASE:https://graph.microsoft.com}
+
 management:
   endpoints:
     web:

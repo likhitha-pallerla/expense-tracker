@@ -381,6 +381,22 @@ export type MailProviderOption = {
   connections: MailConnection[];
 };
 
+export type SyncRun = {
+  id: string;
+  connectionId: string;
+  provider: "gmail" | "outlook";
+  startedAt: string;
+  finishedAt: string | null;
+  status: "running" | "ok" | "failed";
+  fetched: number;
+  stored: number;
+  skipped: number;
+  hasMore: boolean;
+  error: string | null;
+  /** Built by the API, because the counts only mean something together. */
+  summary: string;
+};
+
 export type NotificationType =
   | "budget_threshold"
   | "card_due"

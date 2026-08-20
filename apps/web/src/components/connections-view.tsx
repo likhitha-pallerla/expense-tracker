@@ -2,11 +2,15 @@
 
 import { useActionState } from "react";
 
-import { connectMailbox, disconnectMailbox } from "@/lib/actions/connections";
+import {
+  connectMailbox,
+  disconnectMailbox,
+  syncMailboxes,
+} from "@/lib/actions/connections";
 import { idleState } from "@/lib/actions/form-state";
 import { Button, Card, EmptyState } from "@/components/ui/form";
 import { formatDateTime } from "@/lib/format";
-import type { MailConnection, MailProviderOption } from "@/lib/types";
+import type { MailConnection, MailProviderOption, SyncRun } from "@/lib/types";
 
 const STATUS_CHIP: Record<MailConnection["status"], string> = {
   active: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
@@ -60,6 +64,41 @@ function DisconnectButton({ connection }: { connection: MailConnection }) {
   );
 }
 
+/**
+ * Asks for new mail.
+ *
+ * <p>The result is shown here rather than as a page-level banner because it
+ * belongs to one mailbox: "nothing new" against a mailbox that is failing would
+ * be actively misleading if it appeared at the top of the page.
+ */
+function CheckButton({
+  id,
+  label,
+  variant = "secondary",
+}: {
+  id?: string;
+  label: string;
+  variant?: "primary" | "secondary";
+}) {
+  const [state, submit, pending] = useActionState(syncMailboxes, idleState);
+
+  return (
+    <form action={submit} className="flex flex-wrap items-center justify-end gap-3">
+      {id && <input type="hidden" name="id" value={id} />}
+      {state.message && (
+        <span
+          className={`text-xs ${state.ok ? "text-neutral-500" : "text-red-600"}`}
+        >
+          {state.message}
+        </span>
+      )}
+      <Button type="submit" variant={variant} disabled={pending}>
+        {pending ? "Checking…" : label}
+      </Button>
+    </form>
+  );
+}
+
 function ConnectionRow({ connection }: { connection: MailConnection }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-neutral-200 p-3 dark:border-neutral-800">
@@ -85,18 +124,87 @@ function ConnectionRow({ connection }: { connection: MailConnection }) {
           <p className="mt-1 text-xs text-red-600">{connection.lastError}</p>
         )}
       </div>
-      <DisconnectButton connection={connection} />
+      <div className="flex flex-wrap items-center gap-3">
+        <CheckButton id={connection.id} label="Check now" />
+        <DisconnectButton connection={connection} />
+      </div>
     </li>
+  );
+}
+
+const RUN_CHIP: Record<SyncRun["status"], string> = {
+  ok: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  running: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
+  failed: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
+};
+
+/**
+ * The history of every check, successful or not.
+ *
+ * <p>This exists so that "why has nothing appeared?" has an answer that is not
+ * a shrug. A mailbox that was checked and genuinely had nothing in it looks
+ * quite different from one that has been failing quietly for a week.
+ */
+function RunHistory({ runs }: { runs: SyncRun[] }) {
+  return (
+    <Card
+      title="Recent checks"
+      action={<CheckButton label="Check all mailboxes" variant="primary" />}
+    >
+      {runs.length === 0 ? (
+        <EmptyState>
+          No checks yet. Connect a mailbox, then check it for new alerts —
+          nothing is read until you ask.
+        </EmptyState>
+      ) : (
+        <ul className="space-y-2">
+          {runs.map((run) => (
+            <li
+              key={run.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-neutral-200 p-3 dark:border-neutral-800"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">{run.summary}</span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${RUN_CHIP[run.status]}`}
+                  >
+                    {run.status === "ok"
+                      ? "Done"
+                      : run.status === "running"
+                        ? "Running"
+                        : "Failed"}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-neutral-500">
+                  {formatDateTime(run.startedAt)}
+                  {run.hasMore && " · more mail is waiting, check again"}
+                </p>
+                {run.error && (
+                  <p className="mt-1 text-xs text-red-600">{run.error}</p>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
 export function ConnectionsView({
   providers,
+  runs,
 }: {
   providers: MailProviderOption[];
+  runs: SyncRun[];
 }) {
+  const connected = providers.some((option) => option.connections.length > 0);
+
   return (
     <div className="space-y-6">
+      {connected && <RunHistory runs={runs} />}
+
       {providers.map((option) => (
         <Card
           key={option.provider}
@@ -142,6 +250,10 @@ export function ConnectionsView({
           <li>
             Only messages that look like bank or payment alerts are read. Nothing
             else is opened, stored or sent anywhere.
+          </li>
+          <li>
+            Nothing is read on a schedule. Mail is only ever checked when you
+            press the button, and only mail that arrived since the last check.
           </li>
           <li>
             Access is read-only. Even if this app were compromised, it could not

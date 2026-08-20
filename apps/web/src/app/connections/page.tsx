@@ -2,7 +2,7 @@ import { AppShell } from "@/components/app-shell";
 import { ConnectionsView } from "@/components/connections-view";
 import { EmptyState } from "@/components/ui/form";
 import { apiFetch } from "@/lib/api";
-import type { MailProviderOption } from "@/lib/types";
+import type { MailProviderOption, SyncRun } from "@/lib/types";
 
 export const metadata = { title: "Connections" };
 
@@ -45,10 +45,18 @@ export default async function ConnectionsPage({
       : null;
 
   let providers: MailProviderOption[] = [];
+  let runs: SyncRun[] = [];
   let error: string | null = null;
 
   try {
-    providers = await apiFetch<MailProviderOption[]>("/api/connections");
+    // The run history is decoration; a failure to load it must not take the
+    // connections themselves down with it.
+    const [loaded, history] = await Promise.all([
+      apiFetch<MailProviderOption[]>("/api/connections"),
+      apiFetch<SyncRun[]>("/api/sync/runs").catch(() => [] as SyncRun[]),
+    ]);
+    providers = loaded;
+    runs = history;
   } catch (err) {
     error = (err as Error).message;
   }
@@ -74,7 +82,7 @@ export default async function ConnectionsPage({
       {error ? (
         <EmptyState>Could not load connections: {error}</EmptyState>
       ) : (
-        <ConnectionsView providers={providers} />
+        <ConnectionsView providers={providers} runs={runs} />
       )}
     </AppShell>
   );

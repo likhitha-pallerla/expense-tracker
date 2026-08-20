@@ -127,6 +127,9 @@ All routes require a bearer token and are scoped to the caller.
 | `POST` | `/api/connections/{provider}/start` | Begin linking a mailbox; returns the URL to send the browser to |
 | `GET` | `/api/connections/callback/{provider}` | Where the provider returns to. Public by necessity — see below |
 | `DELETE` | `/api/connections/{id}` | Unlink a mailbox and destroy its token |
+| `POST` | `/api/sync` | Check every connected mailbox for new payment alerts |
+| `POST` | `/api/sync/{connectionId}` | Check one mailbox |
+| `GET` | `/api/sync/runs` | History of past checks; `limit` (default 10) |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
@@ -458,6 +461,53 @@ they are present:
 Register the redirect URI as `{OAUTH_API_BASE}/api/connections/callback/gmail`
 and `…/callback/outlook`. Microsoft has no per-token revoke endpoint, so
 `MICROSOFT_REVOKE_URI` is empty and revocation there is skipped.
+
+### Reading mail
+
+Nothing is read on a schedule. The API runs on a free instance that sleeps when
+idle, so a cron job would mostly not fire at all — a scheduler here would be a
+promise the deployment cannot keep. Mail is fetched when the user presses
+**Check for new alerts** on `/connections`, and only mail that arrived since the
+last check.
+
+The endpoints are `POST` rather than `GET` because they are not safe to repeat
+blindly: each call spends provider quota and advances a cursor, and a `GET`
+would be prefetched by browsers and retried by proxies.
+
+**Only payment alerts are stored.** `MailQuery.looksRelevant` requires *both* a
+currency amount and a whole-word payment keyword, and rejects a list of known
+bank marketing phrases. A newsletter, a loan advert or a lunch invitation is
+counted as fetched and then dropped. This is the single place the promise made
+on the connections page is kept, and it is deliberately the narrow gate rather
+than the wide one: missing a transaction is recoverable, storing a private
+letter is not.
+
+**Every run is recorded** in `sync_runs` — fetched, stored, skipped, whether
+more is waiting, and any error — so "why has nothing appeared?" has an answer.
+A mailbox with genuinely nothing new looks quite different from one that has
+been failing quietly for a week. The table has **select-only** RLS, breaking the
+four-policy pattern used elsewhere: a client that could write a run could invent
+an import that never happened or hide a failure.
+
+**A run stops after 200 messages.** Gmail needs one request per message, so an
+unbounded first sync would be killed by the platform having stored nothing and
+advanced nothing. When a run stops early it says so, and pressing again picks up
+where it left off.
+
+**Cursor loss is routine, not exceptional.** Gmail returns 404 for a `historyId`
+older than about a week; Graph returns 410 for an expired delta link. Both are
+mapped to `MailCursorLostException`, which the fetchers treat as a fork — fall
+back to a dated scan — rather than a wall. The cursor is advanced even when a
+run stores nothing, otherwise the next run re-reads the same mail forever.
+
+Deduplication is left to the database: `insert … on conflict do nothing` with
+**no conflict target**, because `raw_messages` carries two unique constraints
+(`connection_id + provider_message_id`, and `user_id + body_hash`) and either
+one firing means the same thing. Naming one would let the other throw.
+
+`app.mail.gmail-base` and `app.mail.graph-base` exist so sync can be pointed at
+a test double; they are separate from the OAuth settings because they answer a
+different question — where to ask, rather than proving who is asking.
 
 ### Money rules worth knowing
 
