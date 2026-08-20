@@ -76,8 +76,27 @@ export type TransactionPage = {
   offset: number;
 };
 
-export type Category = {
+/** One side of a suspected duplicate, as shown in the review queue. */
+export type DuplicateSide = {
   id: string;
+  amount: number;
+  currency: string;
+  occurredAt: string;
+  description: string | null;
+  merchantName: string | null;
+  accountName: string | null;
+};
+
+export type DuplicatePair = {
+  id: string;
+  score: number;
+  /** Raw JSON from the engine, explaining which rules matched. */
+  signals: string;
+  a: DuplicateSide;
+  b: DuplicateSide;
+};
+
+export type Category = {  id: string;
   parent_id: string | null;
   name: string;
   icon: string | null;

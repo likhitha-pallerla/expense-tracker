@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.expensetracker.api.accounts.AccountService;
+import com.expensetracker.api.dedup.DedupService;
 import com.expensetracker.api.merchants.MerchantService;
 
 /**
@@ -69,11 +70,14 @@ public class TransactionService {
     private final JdbcTemplate jdbc;
     private final AccountService accounts;
     private final MerchantService merchants;
+    private final DedupService dedup;
 
-    public TransactionService(JdbcTemplate jdbc, AccountService accounts, MerchantService merchants) {
+    public TransactionService(JdbcTemplate jdbc, AccountService accounts, MerchantService merchants,
+            DedupService dedup) {
         this.jdbc = jdbc;
         this.accounts = accounts;
         this.merchants = merchants;
+        this.dedup = dedup;
     }
 
     public Page list(UUID userId, TransactionFilter filter) {
@@ -124,7 +128,11 @@ public class TransactionService {
         UUID id = insert(userId, kind, direction, request, merchantId, categoryId);
 
         merchants.rememberCategory(userId, merchantId, request.categoryId());
-        return get(userId, id);
+
+        // If this turned out to be a second report of an existing payment, show
+        // the row that survived rather than the one now hidden behind it.
+        DedupService.Outcome outcome = dedup.screen(userId, id);
+        return get(userId, outcome.isMerged() ? outcome.survivorId() : id);
     }
 
     private UUID insert(UUID userId, TransactionKind kind, TransactionDirection direction,

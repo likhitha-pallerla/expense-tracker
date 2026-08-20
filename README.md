@@ -95,9 +95,40 @@ All routes require a bearer token and are scoped to the caller.
 | `POST` `PUT` | `/api/transactions[/{id}]` | Create / replace an expense or income |
 | `POST` | `/api/transactions/transfers` | Record a transfer as two linked legs |
 | `DELETE` | `/api/transactions/{id}` | Soft delete; removes both legs of a transfer |
+| `GET` | `/api/duplicates` | Suspected duplicate pairs awaiting review, with signals |
+| `GET` | `/api/duplicates/count` | Pending count, for the nav badge |
+| `POST` | `/api/duplicates/{id}/merge` | Confirm one payment; keeps the earlier row |
+| `POST` | `/api/duplicates/{id}/keep-both` | Two genuinely separate payments |
+| `POST` | `/api/duplicates/{id}/dismiss` | Stop asking about this pair |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
+
+### How duplicates are caught
+
+The same payment routinely arrives twice — once as a bank email, once as an SMS
+alert. Every new transaction is screened against existing ones in four layers:
+
+| Layer | Rule |
+| --- | --- |
+| L0 | Identical raw message — blocked by unique constraints on `raw_messages` |
+| L1 | Bank reference (RRN/UTR) — equal means the same payment, different means definitely not |
+| L2 | Weighted score: time `0.40`, merchant `0.35`, account `0.15`, source channel `0.10` |
+| L3 | Anything uncertain goes to `/review` for the user to decide |
+
+Scores at or above `0.90` merge automatically; `0.55` and above are queued.
+
+Two rules stop the engine from destroying real data:
+
+- **Hand-typed transactions are never merged automatically.** Two identical
+  purchases minutes apart score high enough to merge, but a user who types a
+  transaction meant to — so those go to review instead. An identical bank
+  reference is exempt, because that is proof rather than inference.
+- **Transfer legs are excluded entirely.** A transfer is two rows bound by
+  `transfer_id`; merging one away would leave the other dangling.
+
+Merging never deletes. The duplicate keeps its row and gains a `merged_into_id`
+pointing at the survivor, so any merge can be undone.
 
 ### Money rules worth knowing
 
