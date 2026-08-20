@@ -216,6 +216,66 @@ export type Card = {
   status: CardStatus;
 };
 
+export const CADENCES = [
+  { value: "weekly", label: "Weekly" },
+  { value: "fortnightly", label: "Fortnightly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "half_yearly", label: "Every six months" },
+  { value: "yearly", label: "Yearly" },
+] as const;
+
+export type Cadence = (typeof CADENCES)[number]["value"];
+
+/** What the user has decided about a series. */
+export type RecurringState = "suggested" | "confirmed" | "dismissed";
+
+/** What the money is doing, which is a different question. */
+export type RecurringStatus =
+  | "active"
+  | "due_today"
+  | "due_soon"
+  | "overdue"
+  | "ended"
+  | "paused"
+  | "dismissed";
+
+export type Recurring = {
+  /** Null while it is only a suggestion — nothing has been saved to address. */
+  id: string | null;
+  matchKey: string;
+  name: string;
+  state: RecurringState;
+  status: RecurringStatus;
+  direction: "debit" | "credit";
+  categoryId: string | null;
+  categoryName: string | null;
+  accountId: string | null;
+  accountName: string | null;
+  currency: string;
+  cadence: Cadence;
+  cadenceDays: number;
+
+  typicalAmount: number;
+  latestAmount: number;
+  amountVaries: boolean;
+  priceChanged: boolean;
+
+  occurrences: number;
+  firstCharge: string | null;
+  lastCharge: string | null;
+  nextExpected: string | null;
+  daysUntilNext: number | null;
+
+  monthlyCost: number;
+  yearlyCost: number;
+  isSubscription: boolean;
+  isActive: boolean;
+  confidence: number;
+  reasons: string[];
+  notes: string | null;
+};
+
 export type Budget = {
   id: string;
   name: string | null;

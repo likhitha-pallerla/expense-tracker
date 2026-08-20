@@ -35,6 +35,14 @@ class ApiExceptionHandlerTest {
         assertThat(detail).isEqualTo("You already have a budget for that category and period.");
     }
 
+    @Test
+    void explainsDuplicateRecurringPayments() {
+        String detail = ApiExceptionHandler.describe(
+                violation("duplicate key value violates unique constraint \"recurring_match_key_unique\""));
+
+        assertThat(detail).isEqualTo("You are already tracking that as a recurring payment.");
+    }
+
     /** Raw Postgres text can leak schema details, so unknowns get a generic message. */
     @Test
     void fallsBackToAGenericMessageForUnknownConstraints() {

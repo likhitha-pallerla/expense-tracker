@@ -110,6 +110,12 @@ All routes require a bearer token and are scoped to the caller.
 | `GET` | `/api/cards/{accountId}` | One card |
 | `PUT` | `/api/cards/{accountId}` | Save the bank's figures: limit, billing/due day, statement |
 | `DELETE` | `/api/cards/{accountId}` | Clear those figures; the account and its transactions stay |
+| `GET` | `/api/recurring` | Subscriptions and regular payments, detected plus confirmed |
+| `GET` | `/api/recurring/{id}` | One saved recurring payment |
+| `POST` | `/api/recurring` | Confirm a detected series, or add one by hand |
+| `POST` | `/api/recurring/dismiss` | Stop suggesting a series |
+| `PUT` | `/api/recurring/{id}` | Rename, recategorise or pause one |
+| `DELETE` | `/api/recurring/{id}` | Stop tracking, or undo a dismissal |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
@@ -217,6 +223,50 @@ tell whether a figure came from their bank or from their own bookkeeping.
 When no statement has been entered the status says `tracking` rather than
 guessing — claiming a card is clear because nothing was entered would be worse
 than admitting there is nothing to compare against.
+
+### Recurring payments
+
+Subscriptions are found in the ledger rather than declared. Charges are grouped
+by merchant, direction and currency, and a group becomes a series when it looks
+like one. Detection runs on every read, so deleting a charge, merging a
+duplicate or re-dating a transaction changes the answer immediately; nothing is
+cached to go stale.
+
+What *is* stored is the user's decision — that a series is real, what to call
+it, and which suggestions they never want to see again. Those are facts about
+the user, not about the data.
+
+**Three charges minimum.** Two charges give one gap and nothing to compare it
+against, which is a coincidence rather than a pattern.
+
+**Six cadences, with wide gaps between them:** weekly, fortnightly, monthly,
+quarterly, half-yearly and yearly. Plans are sold on those rhythms. A merchant
+charged every 45 days is a habit, not a plan, and admitting them would bury the
+real subscriptions in noise. Daily is excluded for the same reason.
+
+**A skipped cycle is a hole in a series, not the end of one.** A subscription
+billed on the 5th that misses April is charged 61 days later and is still on the
+5th, so the tolerance is not widened for a longer gap. But a run where *every*
+gap is two cycles is not monthly-with-holes — it is a slower rhythm this list
+does not carry, and it is rejected rather than promising a charge that will
+never arrive.
+
+**Amounts may move.** A utility bill that is different every month still
+recurs, and is marked as varying rather than forecast precisely. A price
+*change* is claimed only when a settled amount stepped to a new one — flagging
+an inherently variable bill every month would teach you to ignore the flag.
+
+**Every suggestion explains itself** — how many times it was charged, how many
+gaps fit, how close to schedule, and whether the amount held steady. A list you
+cannot argue with is a list you will not trust.
+
+**Transfers are excluded.** Moving money between your own accounts is regular
+but is not a payment; a monthly card settlement belongs on the cards page.
+Charges you excluded from analytics *are* included: that flag hides a row from
+spending totals, it does not stop the money leaving.
+
+Rejecting a suggestion and pausing a subscription are stored separately. They
+are different intentions, and collapsing them would lose one of them.
 
 ### Money rules worth knowing
 

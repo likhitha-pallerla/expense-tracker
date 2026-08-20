@@ -83,6 +83,9 @@ public class ApiExceptionHandler {
         if (message.contains("budgets_period_unique")) {
             return "You already have a budget for that category and period.";
         }
+        if (message.contains("recurring_match_key_unique")) {
+            return "You are already tracking that as a recurring payment.";
+        }
         return "That change conflicts with existing data.";
     }
 }
