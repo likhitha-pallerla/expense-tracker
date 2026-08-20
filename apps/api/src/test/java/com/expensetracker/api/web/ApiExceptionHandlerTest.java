@@ -27,6 +27,14 @@ class ApiExceptionHandlerTest {
         assertThat(detail).contains("bank reference");
     }
 
+    @Test
+    void explainsDuplicateBudgets() {
+        String detail = ApiExceptionHandler.describe(
+                violation("duplicate key value violates unique constraint \"budgets_period_unique\""));
+
+        assertThat(detail).isEqualTo("You already have a budget for that category and period.");
+    }
+
     /** Raw Postgres text can leak schema details, so unknowns get a generic message. */
     @Test
     void fallsBackToAGenericMessageForUnknownConstraints() {

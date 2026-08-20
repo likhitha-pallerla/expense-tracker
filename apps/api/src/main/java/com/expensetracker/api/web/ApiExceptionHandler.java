@@ -80,6 +80,9 @@ public class ApiExceptionHandler {
         if (message.contains("merchants_name_unique")) {
             return "That merchant already exists.";
         }
+        if (message.contains("budgets_period_unique")) {
+            return "You already have a budget for that category and period.";
+        }
         return "That change conflicts with existing data.";
     }
 }

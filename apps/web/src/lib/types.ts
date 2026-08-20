@@ -159,12 +159,51 @@ export type ImportResult = {
   failed: number;
 };
 
-export type Category = {  id: string;
+export type Category = {
+  id: string;
   parent_id: string | null;
   name: string;
   icon: string | null;
   is_system: boolean;
   sort_order: number;
+};
+
+export const BUDGET_PERIODS = [
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
+] as const;
+
+export type BudgetPeriod = (typeof BUDGET_PERIODS)[number]["value"];
+
+export type BudgetStatus = "on_track" | "warning" | "over" | "upcoming" | "ended";
+
+export type Budget = {
+  id: string;
+  name: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  amount: number;
+  currency: string;
+  period: BudgetPeriod;
+  startsOn: string;
+  endsOn: string | null;
+  rollover: boolean;
+  alertThresholds: number[];
+  isActive: boolean;
+
+  periodStart: string;
+  periodEnd: string;
+  daysRemaining: number;
+  daysTotal: number;
+
+  spent: number;
+  carriedOver: number;
+  limit: number;
+  remaining: number;
+  percentUsed: number;
+  projected: number;
+  status: BudgetStatus;
 };
 
 export type Profile = {

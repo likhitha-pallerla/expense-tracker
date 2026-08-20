@@ -102,6 +102,10 @@ All routes require a bearer token and are scoped to the caller.
 | `POST` | `/api/duplicates/{id}/dismiss` | Stop asking about this pair |
 | `POST` | `/api/imports/preview` | Read a CSV and report what it *would* import; writes nothing |
 | `POST` | `/api/imports` | Import the file with a confirmed column mapping |
+| `GET` | `/api/budgets` | Budgets with live spend, remaining and status (`?includeInactive=true`) |
+| `GET` | `/api/budgets/{id}` | One budget with the same computed figures |
+| `POST` `PUT` | `/api/budgets[/{id}]` | Create / replace a budget |
+| `DELETE` | `/api/budgets/{id}` | Delete a budget |
 
 List filters: `from`, `to`, `accountId`, `categoryId`, `merchantId`, `kind`,
 `search`, `minAmount`, `maxAmount`, `includeExcluded`, `limit` (max 200), `offset`.
@@ -155,6 +159,30 @@ Two rules keep an import honest:
 
 Statement dates carry no time, so they are anchored at midday in the user's own
 timezone; no zone shift can move a purchase onto the adjacent day.
+
+### How budgets work
+
+A budget is a limit on a category — or on everything, if no category is chosen.
+Spend is **computed from the ledger on every read**, never stored, so editing,
+deleting, excluding or merging a transaction can never leave a budget quoting a
+figure that disagrees with the transaction list.
+
+Four kinds of row are deliberately left out of the total: transfers and income
+(moving or receiving your own money is not spending), rows the user marked as
+excluded, soft-deleted rows, and rows merged away as duplicates.
+
+- **Periods run from the budget's own start date, not the 1st of the month.**
+  Someone paid on the 25th budgets from the 25th. Each window is measured from
+  the original start date rather than stepped one period at a time, so a budget
+  starting on the 31st does not get stranded on the 28th after February.
+- **A budget on a parent category includes its children.** Budgeting "Food"
+  means groceries and dining, not an empty parent bucket.
+- **Rollover is cumulative, and floored at zero.** Carried-over allowance is
+  everything budgeted so far minus everything spent so far, so an overspend in
+  one period reduces the next but never becomes an invisible debt.
+
+Status comes from the user's own alert thresholds rather than a fixed rule —
+the point of setting them is to decide when you want to be told.
 
 ### Money rules worth knowing
 

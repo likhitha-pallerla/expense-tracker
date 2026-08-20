@@ -18,6 +18,7 @@ import com.expensetracker.api.dedup.DedupCandidate;
 import com.expensetracker.api.dedup.DedupService;
 import com.expensetracker.api.dedup.Provenance;
 import com.expensetracker.api.merchants.MerchantNormalizer;
+import com.expensetracker.api.profile.UserSettings;
 import com.expensetracker.api.transactions.TransactionRequest;
 import com.expensetracker.api.transactions.TransactionService;
 
@@ -36,13 +37,15 @@ public class ImportService {
     private final AccountService accounts;
     private final TransactionService transactions;
     private final DedupService dedup;
+    private final UserSettings settings;
 
     public ImportService(JdbcTemplate jdbc, AccountService accounts,
-            TransactionService transactions, DedupService dedup) {
+            TransactionService transactions, DedupService dedup, UserSettings settings) {
         this.jdbc = jdbc;
         this.accounts = accounts;
         this.transactions = transactions;
         this.dedup = dedup;
+        this.settings = settings;
     }
 
     public ImportDtos.Preview preview(UUID userId, ImportDtos.PreviewRequest request) {
@@ -244,14 +247,6 @@ public class ImportService {
      * otherwise a purchase could land on the previous day in their ledger.
      */
     private ZoneId zoneOf(UUID userId) {
-        String timezone = jdbc.query(
-                "select timezone from profiles where id = ?",
-                rs -> rs.next() ? rs.getString(1) : null, userId);
-
-        try {
-            return timezone == null ? ZoneId.of("Asia/Kolkata") : ZoneId.of(timezone);
-        } catch (Exception ex) {
-            return ZoneId.of("Asia/Kolkata");
-        }
+        return settings.zoneOf(userId);
     }
 }
