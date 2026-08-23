@@ -591,3 +591,67 @@ export type ExpectedCharge = {
   amountVaries: boolean;
   isIncome: boolean;
 };
+// ---------------------------------------------------------------------------
+// Goals
+
+/**
+ * Everything derived about a goal.
+ *
+ * Nulls are meaningful throughout and mean "we cannot say" rather than zero:
+ * a goal with no target date has no required pace and can never be behind,
+ * and a goal only days old has no measurable pace at all.
+ */
+export type GoalProgress = {
+  target: number;
+  saved: number;
+  remaining: number;
+  percent: number;
+  achieved: boolean;
+  /** Negative once the date has passed. Null when there is no date. */
+  daysLeft: number | null;
+  monthsLeft: number | null;
+  overdue: boolean;
+  /** What the deadline needs each month. Null once achieved or undated. */
+  requiredPerMonth: number | null;
+  /** What has actually been going in. Null until there is enough history. */
+  actualPerMonth: number | null;
+  /** Null when nothing is going in — the honest answer there is "never". */
+  projectedDate: string | null;
+  /** Null means unknowable, which is common and not a failure. */
+  onTrack: boolean | null;
+  planShortfall: number | null;
+  planFallsShort: boolean;
+  notStarted: boolean;
+};
+
+export type GoalContribution = {
+  id: string;
+  amount: number;
+  occurredOn: string;
+  note: string | null;
+  transactionId: string | null;
+  createdAt: string;
+  isWithdrawal: boolean;
+};
+
+export type Goal = {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currency: string;
+  targetDate: string | null;
+  monthlyTarget: number | null;
+  accountId: string | null;
+  accountName: string | null;
+  notes: string | null;
+  status: "active" | "achieved" | "paused" | "cancelled";
+  achievedAt: string | null;
+  createdAt: string;
+  progress: GoalProgress;
+  /** Only populated when a single goal is fetched. */
+  contributions: GoalContribution[];
+  /** Written by the API so web and mobile say the same thing. */
+  headline: string;
+  isActive: boolean;
+  isCancelled: boolean;
+};
