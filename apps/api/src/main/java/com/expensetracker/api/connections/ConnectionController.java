@@ -35,6 +35,12 @@ public class ConnectionController {
         return connections.providers(CurrentUser.id());
     }
 
+    /** Phones uploading SMS alerts, so they can be seen and stopped from here. */
+    @GetMapping("/devices")
+    public List<ConnectionView> devices() {
+        return connections.devices(CurrentUser.id());
+    }
+
     /**
      * Starts the handshake and hands back the URL to visit.
      *

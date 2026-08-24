@@ -371,6 +371,19 @@ export type MailConnection = {
 };
 
 /**
+ * A phone that has uploaded SMS alerts.
+ *
+ * The same shape as a mailbox because the server stores it in the same table,
+ * but it reaches the page by a different route: nobody connects a phone from
+ * here, it turns up because the app signed in and started sending. The
+ * `address` is the device's own id, which is also shown on the phone, so the
+ * two can be matched when there is more than one.
+ */
+export type DeviceConnection = Omit<MailConnection, "provider"> & {
+  provider: "android_sms";
+};
+
+/**
  * A provider we support, whether this deployment can actually offer it, and
  * what the user has connected through it.
  */

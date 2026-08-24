@@ -1,0 +1,213 @@
+{
+  "$comment": [
+    "The single source of truth for what the SMS filter must accept and reject.",
+    "",
+    "Two implementations read this file: the Java one in apps/api (SmsFilterVectorTest)",
+    "and the TypeScript one in apps/mobile (sms-filter.test.ts). Neither owns it. If",
+    "somebody tightens a rule on one side and forgets the other, the forgotten side",
+    "fails here rather than in production, which is the entire point of keeping the",
+    "examples in a language-neutral file instead of duplicating them as test code.",
+    "",
+    "Add a case whenever a real message is mishandled. The bodies below are written",
+    "in the house style of Indian bank alerts because that is what the app will meet",
+    "first, but nothing in the filter is India-specific."
+  ],
+  "accept": [
+    {
+      "name": "upi debit",
+      "sender": "AD-HDFCBK",
+      "body": "Rs.450.00 debited from a/c **1234 on 04-02-26 to VPA swiggy@ybl (UPI Ref 403512789012). Not you? Call 18002586161"
+    },
+    {
+      "name": "upi credit",
+      "sender": "VM-ICICIB",
+      "body": "Dear Customer, Rs 2,500.00 credited to your A/c XX8891 on 03-Feb-26 by UPI from RAHUL K (UPI Ref 403498112233)."
+    },
+    {
+      "name": "card spend at a merchant",
+      "sender": "AX-AXISBK",
+      "body": "INR 1,299.00 spent on AXIS BANK Credit Card XX4471 at AMAZON on 02-02-26 09:14:02. Avl Lmt INR 84,201.00"
+    },
+    {
+      "name": "atm withdrawal",
+      "sender": "JD-SBIINB",
+      "body": "Rs 5000 withdrawn from A/c XX2231 at SBI ATM CHANDANAGAR on 01-02-26. Avl Bal Rs 41,220.55"
+    },
+    {
+      "name": "salary credit",
+      "sender": "AD-KOTAKB",
+      "body": "Your a/c XX0912 is credited with INR 95,000.00 on 31-01-26 towards SALARY JAN 2026. Avl bal INR 1,32,884.10"
+    },
+    {
+      "name": "autopay mandate",
+      "sender": "BP-ONECRD",
+      "body": "INR 799 auto-debited from your account XX3311 towards NETFLIX subscription on 05-02-26 via UPI Autopay."
+    },
+    {
+      "name": "emi instalment",
+      "sender": "AD-BAJAJF",
+      "body": "EMI of Rs 4,166.00 has been debited from your account XX7712 for loan L0099231 on 05-02-26."
+    },
+    {
+      "name": "refund posted back to a card",
+      "sender": "VM-HDFCBK",
+      "body": "INR 2,199.00 refunded to your HDFC Bank Card XX9021 by MYNTRA on 06-02-26."
+    },
+    {
+      "name": "wallet top up",
+      "sender": "AD-PAYTMB",
+      "body": "Rs 1,000 transferred from your bank account XX4412 to Paytm Wallet on 06-02-26. Wallet balance Rs 1,240."
+    },
+    {
+      "name": "numeric shortcode is allowed when the content is a real alert",
+      "sender": "56767",
+      "body": "Rs 320.00 debited from a/c **5567 on 07-02-26 to VPA bluedart@icici. UPI Ref 404112233445."
+    },
+    {
+      "name": "unprefixed alphabetic sender",
+      "sender": "SBIUPI",
+      "body": "Dear UPI user A/C X2231 debited by 150.0 on date 08Feb26 trf to ZOMATO Refno 404223344556. Rs 150.00"
+    },
+    {
+      "name": "rupee symbol rather than the letters",
+      "sender": "AD-INDUSB",
+      "body": "₹6,500.00 paid to LANDLORD RAMESH from A/c XX1188 on 01-02-26 via IMPS. Ref 404009988776."
+    },
+    {
+      "name": "foreign currency on an international card",
+      "sender": "AD-HDFCBK",
+      "body": "USD 12.99 spent on HDFC Bank Card XX9021 at GITHUB.COM on 03-02-26. Converted INR 1,092.44"
+    },
+    {
+      "name": "a bank telling you not to share card details is not an otp",
+      "sender": "AD-ICICIB",
+      "body": "Rs 899.00 spent on ICICI Card XX2210 at SPOTIFY on 04-02-26. Do not share your card details with anyone."
+    },
+    {
+      "name": "reversal of an earlier charge",
+      "sender": "VM-SBICRD",
+      "body": "Rs 1,450.00 has been reversed to your SBI Card XX3311 on 06-02-26 against transaction dated 02-02-26."
+    },
+    {
+      "name": "cheque cleared",
+      "sender": "AD-PNBSMS",
+      "body": "An amount of Rs 25,000.00 has been debited from your account XX9987 towards cheque no 004512 on 05-02-26."
+    }
+  ],
+  "reject": [
+    {
+      "name": "a friend asking about money",
+      "sender": "+919812345678",
+      "body": "hey did you send the Rs 500 i paid for dinner yesterday? check and confirm",
+      "reason": "PERSONAL_SENDER"
+    },
+    {
+      "name": "a ten digit sender with no country code",
+      "sender": "9812345678",
+      "body": "Rs 2000 credited to your account, please check",
+      "reason": "PERSONAL_SENDER"
+    },
+    {
+      "name": "a personal number written with spacing",
+      "sender": "+91 98123 45678",
+      "body": "I have transferred Rs 1500 to you just now",
+      "reason": "PERSONAL_SENDER"
+    },
+    {
+      "name": "a personal number wrapped in brackets, which an earlier shape-matching rule let through",
+      "sender": "(+91) 9812345678",
+      "body": "Rs 450.00 debited from a/c **1234, is this yours?",
+      "reason": "PERSONAL_SENDER"
+    },
+    {
+      "name": "an entirely private message that mentions nothing financial",
+      "sender": "+919998887776",
+      "body": "running late, start without me",
+      "reason": "PERSONAL_SENDER"
+    },
+    {
+      "name": "otp carrying an amount, which would double count the real alert",
+      "sender": "AD-HDFCBK",
+      "body": "724193 is the OTP for a payment of Rs 2,500.00 to AMAZON on your HDFC Card XX9021. Valid for 5 minutes.",
+      "reason": "OTP_CODE"
+    },
+    {
+      "name": "one time password written out in full",
+      "sender": "VM-ICICIB",
+      "body": "Your one time password is 883412 for a transaction of INR 1,200 debited from A/c XX8891.",
+      "reason": "OTP_CODE"
+    },
+    {
+      "name": "login verification code",
+      "sender": "AD-AXISBK",
+      "body": "Use verification code 552310 to log in to Axis Mobile. Rs 0 will be debited.",
+      "reason": "OTP_CODE"
+    },
+    {
+      "name": "declined card",
+      "sender": "AD-HDFCBK",
+      "body": "Your transaction of Rs 3,499.00 on Card XX9021 at FLIPKART was declined. Please retry.",
+      "reason": "NOT_SETTLED"
+    },
+    {
+      "name": "failed upi payment",
+      "sender": "AD-PAYTMB",
+      "body": "Payment of Rs 250.00 to VPA autorickshaw@paytm has failed. The amount debited will be returned in 3 days.",
+      "reason": "NOT_SETTLED"
+    },
+    {
+      "name": "collect request, where no money has moved yet",
+      "sender": "AD-PHONPE",
+      "body": "ANITA S has requested Rs 800.00 from you. Approve in PhonePe by 09-02-26 or it will lapse.",
+      "reason": "MONEY_REQUEST"
+    },
+    {
+      "name": "loan advertising that still uses a past tense verb",
+      "sender": "AD-BAJAJF",
+      "body": "You are pre-approved for a personal loan of Rs 5,00,000 already credited to thousands. Apply now!",
+      "reason": "PROMOTIONAL"
+    },
+    {
+      "name": "a cashback offer phrased as an instruction",
+      "sender": "VM-SBICRD",
+      "body": "Spend Rs 2,000 on your SBI Card this weekend and get Rs 200 cashback. T&C apply.",
+      "reason": "PROMOTIONAL"
+    },
+    {
+      "name": "balance enquiry with no movement",
+      "sender": "AD-HDFCBK",
+      "body": "The available balance in your A/c XX1234 as on 07-02-26 is Rs 41,220.55.",
+      "reason": "NO_TRANSACTION_VERB"
+    },
+    {
+      "name": "statement ready notice",
+      "sender": "VM-ICICIB",
+      "body": "Your credit card statement for Jan 2026 is ready. Total due INR 18,442.00, due date 18-02-26.",
+      "reason": "NO_TRANSACTION_VERB"
+    },
+    {
+      "name": "a delivery update with a bare number in it",
+      "sender": "AD-BLUDRT",
+      "body": "Your shipment 40221133 has been dispatched and will arrive on 09-02-26.",
+      "reason": "NO_AMOUNT"
+    },
+    {
+      "name": "an appointment reminder from a business",
+      "sender": "AD-APOLLO",
+      "body": "Reminder: your appointment with Dr Menon is on 10-02-26 at 11:30. Reply 1 to confirm.",
+      "reason": "NO_AMOUNT"
+    },
+    {
+      "name": "no sender at all",
+      "sender": "",
+      "body": "Rs 500 debited from a/c XX1234 on 04-02-26.",
+      "reason": "UNKNOWN_SENDER"
+    },
+    {
+      "name": "empty body",
+      "sender": "AD-HDFCBK",
+      "body": "   ",
+      "reason": "MALFORMED"
+    }
+  ]
+}

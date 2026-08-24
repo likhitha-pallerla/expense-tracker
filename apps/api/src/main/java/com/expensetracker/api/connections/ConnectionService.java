@@ -92,6 +92,25 @@ public class ConnectionService {
         return available;
     }
 
+    /**
+     * Phones that have uploaded SMS alerts.
+     *
+     * <p>Kept apart from {@link #providers} because a phone is not something
+     * you connect from this page — it appears because an app signed in and
+     * started sending, and the only action available here is to stop it. It is
+     * listed at all so that "which devices can read my messages?" has an answer
+     * on a screen the user can reach, rather than only on the phone itself.
+     */
+    public List<ConnectionView> devices(UUID userId) {
+        return jdbc.query("""
+                select id, provider::text as provider, external_account, display_name,
+                       status::text as status, last_error, last_synced_at, connected_at
+                from source_connections
+                where user_id = ? and provider = 'android_sms' and status <> 'revoked'
+                order by created_at
+                """, (rs, row) -> toView(rs), userId);
+    }
+
     private boolean isReady(MailProvider provider) {
         Provider config = properties.forProvider(provider);
         return config != null && config.isConfigured() && cipher.isConfigured();
@@ -289,6 +308,11 @@ public class ConnectionService {
      * token is gone, not hidden behind a flag that some future query forgets to
      * filter on. Imported transactions are unaffected; they belong to the user,
      * not to the mailbox they arrived through.
+     *
+     * <p>Works for a phone as well as a mailbox. A phone has no token and no
+     * provider to notify, so deleting the row <em>is</em> the revocation — but
+     * it must still be possible, or the one device that can read a person's
+     * messages would be the one thing they could not switch off.
      */
     @Transactional
     public void disconnect(UUID userId, UUID connectionId) {
@@ -303,12 +327,11 @@ public class ConnectionService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such connection.");
         }
 
-        MailProvider provider = MailProvider.from((String) row.get("provider"))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "That connection is not a mailbox."));
-
+        String providerKey = (String) row.get("provider");
         String sealed = (String) row.get("encrypted_refresh_token");
-        if (sealed != null && cipher.isConfigured()) {
+
+        if (shouldRevokeUpstream(providerKey, sealed, cipher.isConfigured())) {
+            MailProvider provider = MailProvider.from(providerKey).orElseThrow();
             try {
                 oauth.revoke(properties.forProvider(provider),
                         cipher.decrypt(sealed, userId.toString()));
@@ -322,6 +345,22 @@ public class ConnectionService {
 
         jdbc.update("delete from source_connections where id = ? and user_id = ?",
                 connectionId, userId);
+    }
+
+    /**
+     * Whether disconnecting should also tell the provider.
+     *
+     * <p>Extracted because the answer used to be assumed rather than asked: the
+     * code took a mailbox for granted and rejected everything else as "not a
+     * mailbox", which quietly made an Android phone impossible to disconnect.
+     * All three reasons to skip the call are genuine and none of them should
+     * stop the row being deleted — there is no upstream to notify, no token to
+     * hand back, or no key to read it with.
+     */
+    static boolean shouldRevokeUpstream(String providerKey, String sealedToken, boolean cipherReady) {
+        return MailProvider.from(providerKey).isPresent()
+                && sealedToken != null
+                && cipherReady;
     }
 
     // ---- helpers -----------------------------------------------------------

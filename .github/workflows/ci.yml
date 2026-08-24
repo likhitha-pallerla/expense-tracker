@@ -60,3 +60,30 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
+
+  mobile:
+    name: Mobile (Expo)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v5
+
+      # Node 24 runs TypeScript directly, so the tests need no build step and no
+      # test framework. Do not drop below it: type stripping is what makes
+      # `node --test` work on these files at all.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # Covers the on-device SMS filter, the offline queue and the scan window.
+      # The filter tests read packages/shared/sms-filter-vectors.json, the same
+      # file the Java suite reads, so the two implementations cannot drift.
+      - run: npm test

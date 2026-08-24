@@ -27,8 +27,9 @@ Read-only access to your mail. No bank credentials are ever stored.
 apps/web              Next.js web app
 apps/api              Spring Boot API
   src/main/resources/db/migration   Flyway SQL migrations (ship inside the jar)
-apps/mobile           Expo app (Phase 4)
-packages/shared-types Shared TypeScript types
+apps/mobile           Expo app — Android SMS capture, manual entry
+  modules/expo-sms-inbox            Local Kotlin module; read-only SMS inbox access
+packages/shared       Test vectors shared by the Java and TypeScript SMS filters
 docs/PLAN.md          Development plan and phasing
 ```
 
@@ -62,11 +63,24 @@ curl http://localhost:8080/api/health     # {"status":"ok", ...}
 Then open <http://localhost:3000>, create an account, and the API provisions your
 default categories and a Cash account on first sign-in.
 
+Run the Android app (optional — needs a device or emulator):
+
+```bash
+cd apps/mobile && npm install
+cp .env.example .env                      # point EXPO_PUBLIC_API_URL at the API
+npx expo run:android                      # not Expo Go: it needs a native module
+```
+
+`expo run:android` rather than `expo start` because reading the SMS inbox needs
+a custom native module, which Expo Go cannot load. Sign in with the same account
+as the web app and the phone appears on the Connections page.
+
 ### Tests
 
 ```bash
 cd apps/api && mvn test                   # JUnit
 cd apps/web && npx tsc --noEmit && npm run lint && npm run build
+cd apps/mobile && npm run typecheck && npm test
 ```
 
 ## How authentication works
@@ -135,6 +149,8 @@ All routes require a bearer token and are scoped to the caller.
 | `GET` | `/api/parse/unread` | Alerts we could not read, and why; `limit` (default 50, max 200) |
 | `POST` | `/api/parse/retry` | Put failures back in the queue and read them again |
 | `POST` | `/api/parse/{messageId}/ignore` | Stop trying to read one message |
+| `POST` | `/api/sms` | Upload a batch of SMS alerts from an Android phone; `parse=true` reads them straight away |
+| `GET` | `/api/sms/policy` | The filter rules the phone must apply, so the app and the server cannot drift apart |
 | `GET` | `/api/insights` | Everything the dashboard shows for one month; `month=YYYY-MM` (defaults to the month you are in) |
 | `GET` | `/api/forecast` | What the balance does next; `days` (7–92, default 30, clamped not rejected) |
 | `GET` | `/api/goals` | Savings goals with progress; `includeClosed`, `withContributions` |
@@ -722,6 +738,58 @@ a salary that landed yesterday.
 
 The one-line summary is written by the API, not the web app, so the mobile app
 says exactly the same thing about the same goal.
+
+### Reading messages on Android
+
+The phone is the only place a bank SMS exists, so the app reads them there. That
+is a serious permission to hold, and the design follows from one asymmetry:
+**everywhere else in this system a missed transaction is the expensive mistake,
+but here a wrongly-uploaded personal message is the unrecoverable one.** So the
+bias is inverted — anything ambiguous stays on the handset.
+
+A message is only uploaded if it passes every check:
+
+| Rejected | Because |
+| --- | --- |
+| Sender is a phone number | Shortcodes are 5–6 digits and mobiles are 10; **anything with no letters and 7+ digits is a person**, and no bank sends from one |
+| Contains an OTP | Not noise — *"724193 is the OTP for a payment of Rs 2,500"* carries an amount and a verb, so storing it would double-count the real alert that follows |
+| Says the payment failed | It never happened |
+| Asks you to pay | A request is not a payment |
+| Reads like an advert | "Get a loan at 10.5%" quotes a rate, not a debit |
+| Has no amount | Nothing to record |
+| Has no past-tense verb | `debited`/`spent`/`paid`, not `pay`/`spend` — this alone removes nearly all marketing without a blocklist |
+
+The sender check runs first and is the highest-value one. It matches on *"does
+this contain a letter?"* rather than the shape of the number, because the
+shape-matching version it replaced could be evaded by punctuation — `(+91)
+9812345678` slipped through and would have had its contents read.
+
+**The same filter exists twice**, in `SmsFilter.java` and
+`apps/mobile/src/lib/sms-filter.ts`, and the server re-runs it on every upload.
+The client copy is what protects the user; the server copy is what guarantees
+it, because a modified app cannot be trusted. They are held together by
+[`packages/shared/sms-filter-vectors.json`](packages/shared/sms-filter-vectors.json),
+read by both test suites — **a new rule without a vector fails the build.**
+
+**SMS fingerprints include the timestamp**; mail fingerprints do not. Bodies
+like *"Rs 20 debited to VPA chaiwala@ybl"* repeat byte-for-byte, and hashing the
+body alone would silently discard the second cup of tea. This puts one hard rule
+on the app: send the time **stored with the message**, never `Date.now()`, or a
+rescan shows the same payment twice. `provider_message_id` is deliberately left
+null, because Android's row id is not stable across a backup and restore.
+
+The upload queue is a **cache, not a record**. Every queued message is still in
+the phone's inbox, so overflow, a crash or a corrupt file all recover by
+scanning again — which is why the queue can drop its oldest entries at 2,000 and
+discard a batch the server rejects rather than block everything behind it. The
+first scan reaches back 90 days; later ones overlap the last by 24 hours, and
+**the watermark only moves when the upload actually succeeded** — otherwise
+someone who reconnects gets told "nothing new" about messages that never
+arrived.
+
+Phones appear on the web Connections page and can be stopped from there. That
+matters more than it sounds: the device reading your messages should not be the
+one connection you cannot switch off.
 
 ### Money rules worth knowing
 

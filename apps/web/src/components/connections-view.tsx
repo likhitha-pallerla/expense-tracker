@@ -12,6 +12,7 @@ import { idleState } from "@/lib/actions/form-state";
 import { Button, Card, EmptyState } from "@/components/ui/form";
 import { formatDateTime } from "@/lib/format";
 import type {
+  DeviceConnection,
   MailConnection,
   MailProviderOption,
   SyncRun,
@@ -54,7 +55,13 @@ function ConnectButton({
   );
 }
 
-function DisconnectButton({ connection }: { connection: MailConnection }) {
+function DisconnectButton({
+  connection,
+  label = "Disconnect",
+}: {
+  connection: MailConnection | DeviceConnection;
+  label?: string;
+}) {
   const [state, submit] = useActionState(disconnectMailbox, idleState);
 
   return (
@@ -64,9 +71,66 @@ function DisconnectButton({ connection }: { connection: MailConnection }) {
         <span className="text-xs text-red-600">{state.message}</span>
       )}
       <Button type="submit" variant="danger">
-        Disconnect
+        {label}
       </Button>
     </form>
+  );
+}
+
+/**
+ * The phones that can send in SMS alerts.
+ *
+ * Shown even when empty. "No phones are sending messages" is a useful thing to
+ * be told by a product that asks for permission to read them — it is the only
+ * place that answer can be checked without picking the handset up, and an empty
+ * card is a far better answer than a missing one.
+ */
+function DevicesCard({ devices }: { devices: DeviceConnection[] }) {
+  return (
+    <Card title="Phones sending SMS alerts">
+      <p className="text-sm text-neutral-600 dark:text-neutral-400">
+        The Android app reads bank alerts on the phone and sends only those. It
+        never uploads messages from personal numbers, one-time passwords or
+        adverts, and the same check runs again here before anything is stored.
+      </p>
+
+      {devices.length === 0 ? (
+        <p className="mt-4 rounded-md bg-neutral-100 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400">
+          No phones are sending messages. Install the app and sign in with this
+          same account to add one.
+        </p>
+      ) : (
+        <ul className="mt-4 space-y-2">
+          {devices.map((device) => (
+            <li
+              key={device.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-neutral-200 px-4 py-3 dark:border-neutral-800"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">
+                  {device.label ?? "Android phone"}
+                </p>
+                <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                  {device.address}
+                  {device.lastSyncedAt
+                    ? ` · last sent ${formatDateTime(device.lastSyncedAt)}`
+                    : " · nothing sent yet"}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs ${STATUS_CHIP[device.status]}`}
+                >
+                  {device.statusDetail}
+                </span>
+                <DisconnectButton connection={device} label="Stop this phone" />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
@@ -286,10 +350,12 @@ function IgnoreButton({ id }: { id: string }) {
 
 export function ConnectionsView({
   providers,
+  devices,
   runs,
   unread,
 }: {
   providers: MailProviderOption[];
+  devices: DeviceConnection[];
   runs: SyncRun[];
   unread: UnreadMessage[];
 }) {
@@ -300,6 +366,8 @@ export function ConnectionsView({
       {connected && <RunHistory runs={runs} />}
 
       {unread.length > 0 && <UnreadCard unread={unread} />}
+
+      <DevicesCard devices={devices} />
 
       {providers.map((option) => (
         <Card

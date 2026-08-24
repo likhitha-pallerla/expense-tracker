@@ -2,7 +2,12 @@ import { AppShell } from "@/components/app-shell";
 import { ConnectionsView } from "@/components/connections-view";
 import { EmptyState } from "@/components/ui/form";
 import { apiFetch } from "@/lib/api";
-import type { MailProviderOption, SyncRun, UnreadMessage } from "@/lib/types";
+import type {
+  DeviceConnection,
+  MailProviderOption,
+  SyncRun,
+  UnreadMessage,
+} from "@/lib/types";
 
 export const metadata = { title: "Connections" };
 
@@ -45,21 +50,26 @@ export default async function ConnectionsPage({
       : null;
 
   let providers: MailProviderOption[] = [];
+  let devices: DeviceConnection[] = [];
   let runs: SyncRun[] = [];
   let unread: UnreadMessage[] = [];
   let error: string | null = null;
 
   try {
-    // The run history and the unread list are both secondary; a failure to load
-    // either must not take the connections themselves down with it.
-    const [loaded, history, failures] = await Promise.all([
+    // The run history, the unread list and the device list are all secondary; a
+    // failure to load any of them must not take the connections down with it.
+    const [loaded, phones, history, failures] = await Promise.all([
       apiFetch<MailProviderOption[]>("/api/connections"),
+      apiFetch<DeviceConnection[]>("/api/connections/devices").catch(
+        () => [] as DeviceConnection[],
+      ),
       apiFetch<SyncRun[]>("/api/sync/runs").catch(() => [] as SyncRun[]),
       apiFetch<UnreadMessage[]>("/api/parse/unread").catch(
         () => [] as UnreadMessage[],
       ),
     ]);
     providers = loaded;
+    devices = phones;
     runs = history;
     unread = failures;
   } catch (err) {
@@ -87,7 +97,12 @@ export default async function ConnectionsPage({
       {error ? (
         <EmptyState>Could not load connections: {error}</EmptyState>
       ) : (
-        <ConnectionsView providers={providers} runs={runs} unread={unread} />
+        <ConnectionsView
+          providers={providers}
+          devices={devices}
+          runs={runs}
+          unread={unread}
+        />
       )}
     </AppShell>
   );

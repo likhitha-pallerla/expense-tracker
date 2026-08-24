@@ -179,9 +179,47 @@ class MailProviderTest {
     }
 
     @Nested
+    @DisplayName("disconnecting")
+    class Disconnecting {
+
+        /**
+         * The regression this exists for. A phone stores no token and has no
+         * provider to notify, and an earlier version treated that as an error
+         * rather than a skip — which meant the single device able to read a
+         * person's messages was the one connection they could not switch off.
+         */
+        @Test
+        void a_phone_is_removed_without_calling_any_provider() {
+            assertThat(ConnectionService.shouldRevokeUpstream("android_sms", null, true)).isFalse();
+            assertThat(ConnectionService.shouldRevokeUpstream("csv_import", null, true)).isFalse();
+            assertThat(ConnectionService.shouldRevokeUpstream("manual", null, true)).isFalse();
+        }
+
+        @Test
+        void a_mailbox_with_a_token_is_revoked_upstream() {
+            assertThat(ConnectionService.shouldRevokeUpstream("gmail", "sealed", true)).isTrue();
+            assertThat(ConnectionService.shouldRevokeUpstream("outlook", "sealed", true)).isTrue();
+        }
+
+        /** Nothing to hand back, so nothing to call — but still deletable. */
+        @Test
+        void a_mailbox_without_a_stored_token_is_just_deleted() {
+            assertThat(ConnectionService.shouldRevokeUpstream("gmail", null, true)).isFalse();
+        }
+
+        /**
+         * Without the key the token cannot be decrypted, so there is nothing to
+         * send. Losing the key must not make connections permanent.
+         */
+        @Test
+        void an_unreadable_token_does_not_block_removal() {
+            assertThat(ConnectionService.shouldRevokeUpstream("gmail", "sealed", false)).isFalse();
+        }
+    }
+
+    @Nested
     @DisplayName("the return path")
     class ReturnPath {
-
         @Test
         void keeps_a_path_inside_the_app() {
             assertThat(ConnectionService.safeReturnPath("/settings/connections"))
