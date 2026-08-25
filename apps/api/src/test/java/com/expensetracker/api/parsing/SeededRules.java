@@ -11,8 +11,8 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * The built-in rules, read out of the migration that ships them.
@@ -73,15 +73,19 @@ final class SeededRules {
         Map<String, Extractor> fields = new HashMap<>();
         try {
             JsonNode root = mapper.readTree(json);
-            root.fields().forEachRemaining(entry -> {
+            for (var entry : root.properties()) {
                 JsonNode node = entry.getValue();
                 fields.put(entry.getKey(), new Extractor(
                         Pattern.compile(node.path("pattern").asText()),
                         node.path("group").asInt(1),
                         Extractor.Kind.valueOf(
                                 node.path("as").asText("text").toUpperCase(Locale.ROOT))));
-            });
-        } catch (IOException ex) {
+            }
+        } catch (RuntimeException ex) {
+            // Jackson 3 throws unchecked, so IOException is no longer possible
+            // here. The intent is unchanged: a seeded rule with broken JSON is
+            // a bug in the migration, and the test run should say so loudly
+            // rather than quietly testing an empty rule.
             throw new IllegalStateException("A seeded rule has invalid extractor JSON", ex);
         }
         return fields;

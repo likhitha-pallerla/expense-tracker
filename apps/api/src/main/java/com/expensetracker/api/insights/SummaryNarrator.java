@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
 
 import com.expensetracker.api.ai.AiClient;
 import com.expensetracker.api.web.Money;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Saying in words what the dashboard already worked out.

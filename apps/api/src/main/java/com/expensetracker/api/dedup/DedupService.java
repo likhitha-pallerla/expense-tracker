@@ -14,8 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Applies {@link DedupEngine} to real rows: finds candidates, merges the
@@ -437,8 +437,13 @@ public class DedupService {
     private String toJson(Map<String, Object> signals) {
         try {
             return json.writeValueAsString(signals);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             // Signals are explanatory only; losing them must not fail a merge.
+            //
+            // Jackson 3 made these unchecked, so the compiler no longer insists
+            // on this catch. It stays because the reasoning is unchanged: a
+            // merge is the valuable thing here, and an unserialisable signal
+            // map should not be allowed to abort one.
             return "{}";
         }
     }
