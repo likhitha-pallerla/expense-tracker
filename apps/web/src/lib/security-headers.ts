@@ -40,18 +40,24 @@ export function makeNonce(): string {
  * @param isDev       development needs `unsafe-eval` for React Fast Refresh and
  *                    websockets for the dev server; neither is allowed in a
  *                    deployed build
+ * @param analyticsHost PostHog's ingestion origin, or empty when analytics are
+ *                    not configured. Passed in rather than always allowed so an
+ *                    installation without analytics has no third-party origin
+ *                    in its policy at all.
  */
 export function contentSecurityPolicy(
   nonce: string,
   supabaseUrl: string,
   apiBaseUrl: string,
   isDev: boolean,
+  analyticsHost = "",
 ): string {
   // Listed explicitly so that a script which did somehow run could not post
   // what it read to an address of its choosing.
   const supabase = new URL(supabaseUrl).origin;
   const api = new URL(apiBaseUrl).origin;
   const websocket = supabase.replace(/^http/, "ws");
+  const analytics = analyticsHost ? new URL(analyticsHost).origin : "";
 
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
@@ -78,6 +84,7 @@ export function contentSecurityPolicy(
       supabase,
       websocket,
       api,
+      ...(analytics ? [analytics] : []),
       ...(isDev ? ["ws://localhost:*", "http://localhost:*"] : []),
     ],
 

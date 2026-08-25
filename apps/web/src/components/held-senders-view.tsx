@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 
 import { Button, Card, EmptyState } from "@/components/ui/form";
 import {
@@ -9,6 +9,7 @@ import {
   untrustSender,
 } from "@/lib/actions/parsing";
 import { idleState } from "@/lib/actions/form-state";
+import { track } from "@/lib/analytics";
 import { formatDateTime } from "@/lib/format";
 import type { HeldSender, TrustedSender } from "@/lib/types";
 
@@ -78,6 +79,17 @@ function HeldRow({ held }: { held: HeldSender }) {
   const [trustState, submitTrust] = useActionState(trustSender, idleState);
   const [discardState, submitDiscard] = useActionState(discardHeld, idleState);
   const state = trustState.message ? trustState : discardState;
+
+  // This gate is a security control, and a security control nobody can live
+  // with gets worked around. A high discard rate means it is holding junk; a
+  // high trust rate means the built-in list is missing real banks. Only the
+  // decision is recorded -- never the sender, which is an address.
+  useEffect(() => {
+    if (trustState.ok) track("held_sender_resolved", { choice: "trusted" });
+  }, [trustState.ok]);
+  useEffect(() => {
+    if (discardState.ok) track("held_sender_resolved", { choice: "discarded" });
+  }, [discardState.ok]);
 
   return (
     <li className="space-y-3 py-4 first:pt-0 last:pb-0">

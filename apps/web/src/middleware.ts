@@ -15,6 +15,7 @@ export async function middleware(request: NextRequest) {
     env.supabaseUrl,
     env.apiBaseUrl,
     process.env.NODE_ENV !== "production",
+    env.analyticsHost,
   );
 
   // Next reads the nonce back off the *request* headers and stamps it onto the

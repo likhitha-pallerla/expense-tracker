@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 
 import {
@@ -9,6 +9,7 @@ import {
   mergeDuplicate,
 } from "@/lib/actions/duplicates";
 import { idleState } from "@/lib/actions/form-state";
+import { track } from "@/lib/analytics";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import type { DuplicatePair, DuplicateSide } from "@/lib/types";
 import { Button, Card, EmptyState, FormMessage } from "@/components/ui/form";
@@ -102,6 +103,19 @@ function PairCard({ pair }: { pair: DuplicatePair }) {
 
   const state = [mergeState, keepState, dismissState].find((s) => s.message);
   const reasons = explain(pair.signals);
+
+  // Which way people resolve a duplicate is the feedback signal for the
+  // matcher: a run of "kept both" means it is pairing things that are not
+  // pairs. The choice is recorded; the transactions themselves are not.
+  useEffect(() => {
+    if (mergeState.ok) track("duplicate_resolved", { choice: "merged" });
+  }, [mergeState.ok]);
+  useEffect(() => {
+    if (keepState.ok) track("duplicate_resolved", { choice: "kept_both" });
+  }, [keepState.ok]);
+  useEffect(() => {
+    if (dismissState.ok) track("duplicate_resolved", { choice: "dismissed" });
+  }, [dismissState.ok]);
 
   // Once resolved the pair disappears on the next load; until then, say so
   // rather than leaving a stale row that invites a second click.

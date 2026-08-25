@@ -302,7 +302,21 @@ Vercel + Render production deploy.
   runs through the same redactor the AI layer uses, since a parse failure
   quotes the alert it could not read. The user is an ID and nothing else.
 
-**Left:** PostHog, backups, and the production deploy.
+**Left:** backups and the production deploy.
+
+**Analytics — done.** PostHog, and like Sentry it is inert unless a key is set;
+the SDK is loaded dynamically, so an installation without analytics never
+downloads it (about 79kB per page). The defaults were the interesting part.
+PostHog's **autocapture** records the text of whatever was clicked, which on
+the transactions page is a merchant and an amount, and **session recording**
+replays a screen that is a bank statement. Both are off, along with IP
+collection. What is sent is three named events — did a mail sync work, how a
+duplicate was resolved, how a held sender was resolved — each carrying a
+decision and nothing else. Paths are scrubbed of record ids before they are
+sent, since `/transactions/<uuid>` would otherwise map which rows a person
+opens; that scrubbing is a privacy control and so has tests. The
+Content-Security-Policy gained PostHog's origin **only when a key is
+configured**, verified in both directions against a running server.
 
 **Framework upgrade — done.** The API was on Spring Boot 3.3.5, which reached
 end of life in June 2025; by mid-2026 the entire 3.x line is unsupported, so

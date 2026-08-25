@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 
 import {
   connectMailbox,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/actions/connections";
 import { ignoreMessage, retryUnread } from "@/lib/actions/parsing";
 import { idleState } from "@/lib/actions/form-state";
+import { track } from "@/lib/analytics";
 import { Button, Card, EmptyState } from "@/components/ui/form";
 import { formatDateTime } from "@/lib/format";
 import type {
@@ -151,6 +152,15 @@ function CheckButton({
   variant?: "primary" | "secondary";
 }) {
   const [state, submit, pending] = useActionState(syncMailboxes, idleState);
+
+  // Whether mail sync actually works for real people is the central question
+  // this product has, so the outcome is recorded. Only the outcome: the
+  // message names a mailbox and a count, and neither belongs in analytics.
+  useEffect(() => {
+    if (state.message) {
+      track("mailbox_sync_completed", { ok: Boolean(state.ok) });
+    }
+  }, [state]);
 
   return (
     <form action={submit} className="flex flex-wrap items-center justify-end gap-3">

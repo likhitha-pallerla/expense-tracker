@@ -40,9 +40,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Node 24 runs TypeScript directly, which is what lets `npm test` below
+      # work with no test framework -- the same arrangement the mobile app
+      # uses. Do not drop below it.
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
 
@@ -51,6 +54,10 @@ jobs:
       - run: npx tsc --noEmit
 
       - run: npm run lint
+
+      # Covers the analytics path scrubber, which is what keeps transaction ids
+      # out of a third party's records.
+      - run: npm test
 
       # src/lib/env.ts throws when these are unset, so the build needs
       # syntactically valid placeholders. They are never used to reach Supabase.

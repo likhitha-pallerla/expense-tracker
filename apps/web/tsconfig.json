@@ -17,6 +17,10 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    // Node's test runner resolves imports the way the runtime does, so a test
+    // has to name the file it imports including the extension. Safe here
+    // because noEmit is set: nothing is compiled through this path.
+    "allowImportingTsExtensions": true,
     "plugins": [
       {
         "name": "next"

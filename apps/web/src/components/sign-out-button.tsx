@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
+import { reset } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 
 export function SignOutButton() {
@@ -12,6 +13,9 @@ export function SignOutButton() {
       type="button"
       onClick={async () => {
         await createClient().auth.signOut();
+        // Without this the next person to sign in on this browser inherits the
+        // previous one's analytics identity, and their events merge.
+        reset();
         router.push("/login");
         router.refresh();
       }}

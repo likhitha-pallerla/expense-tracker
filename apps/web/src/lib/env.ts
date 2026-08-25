@@ -21,4 +21,14 @@ export const env = {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   ),
   apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080",
+
+  /**
+   * Where analytics events are sent, or "" when analytics are switched off.
+   *
+   * Empty unless a PostHog key is configured, so that an installation without
+   * analytics never names a third-party origin in its Content-Security-Policy.
+   */
+  analyticsHost: process.env.NEXT_PUBLIC_POSTHOG_KEY
+    ? (process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com")
+    : "",
 };
