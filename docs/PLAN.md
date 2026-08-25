@@ -302,7 +302,41 @@ Vercel + Render production deploy.
   runs through the same redactor the AI layer uses, since a parse failure
   quotes the alert it could not read. The user is an ID and nothing else.
 
-**Left:** the production deploy.
+**Left:** nothing in this phase that can be done without deploying.
+
+**Deploy — configured.** Web on Vercel, API on Render, both free tier. The
+config is in the repository (`render.yaml`, `apps/api/Dockerfile`,
+`apps/web/vercel.json`); creating the accounts and pasting the secrets is
+manual and is written up in `docs/OPERATIONS.md`.
+
+Two constraints shaped this. **Render has no native Java runtime** — Node,
+Python, Ruby, Go, Rust and Elixir only — so the API ships as a container, and
+that Dockerfile is the only place the Java version is pinned. And **Render's
+free instances spin down after 15 minutes**, paying a 30–60 second cold start
+on the next request. That is tolerable here only because nothing in the API is
+scheduled: there is not a single `@Scheduled` method, and sync is triggered by
+the user, so a sleeping service loses no work. Adding a background sync later
+means paying for an instance or triggering it externally.
+
+The parts most likely to break silently were verified rather than assumed.
+Render routes to the port in `$PORT`, which the app did not read — it only knew
+`SERVER_PORT` — so a deploy would have bound to 8080, received no traffic, and
+failed its health check with no useful error. `server.port` now reads
+`${PORT:${SERVER_PORT:8080}}`, and the built jar was run with `PORT` set the
+way Render sets it to confirm both the binding and that `/actuator/health`
+answers 200 **unauthenticated**, which it must: Render calls it with no token,
+and if it required auth every deploy would roll back.
+
+`OAUTH_API_BASE` and `OAUTH_WEB_BASE` both default to `localhost`, which is
+right on a laptop and would have sent users back to their own machine after
+consent, so both are now explicit in `render.yaml`.
+
+Nothing sensitive is in either config file — this repository is public, so
+every secret is `sync: false` and prompted for once by Render. Worth flagging
+for later: **Vercel preview deployments are publicly reachable by default**, on
+guessable URLs, and on a public repository the branch names are visible too. A
+live personal-finance instance on a findable URL is not what anyone wants;
+Deployment Protection should be on before branches are pushed.
 
 **Backups — done.** Worth stating plainly: **Supabase's free tier takes no
 backups at all** — no snapshots, no point-in-time recovery, no support path

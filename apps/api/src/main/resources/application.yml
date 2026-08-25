@@ -33,7 +33,10 @@ spring:
     schemas: public
 
 server:
-  port: ${SERVER_PORT:8080}
+  # Render assigns a port and passes it as PORT; nothing else is listened on,
+  # so a service that ignores it never passes its health check. SERVER_PORT
+  # stays as the local override, and 8080 as the fallback for both.
+  port: ${PORT:${SERVER_PORT:8080}}
   error:
     include-message: always
 

@@ -1,0 +1,23 @@
+# Keeps the build context small and, more importantly, keeps secrets out of it.
+# Anything sent to the daemon can end up in an image layer.
+
+.env
+.env.*
+*.pem
+*.key
+
+# The image compiles from source in its own build stage, so a locally-built
+# jar must not be shipped into the context -- it would be stale and it is not
+# what gets run.
+target/
+
+# End-to-end tests are not run in the image build; they need a live database.
+e2e/
+
+.git/
+.gitignore
+*.md
+
+.idea/
+.vscode/
+*.iml

@@ -1,0 +1,84 @@
+# Render Blueprint. Applied from the dashboard: New → Blueprint, point it at
+# this repository, and Render reads this file.
+#
+# There are no secrets here, and there must never be: this repository is
+# public. Every value that matters is `sync: false`, which makes Render prompt
+# for it once and store it on their side.
+
+services:
+  - type: web
+    name: expense-tracker-api
+    # Docker, because Render has no native Java runtime. See apps/api/Dockerfile.
+    runtime: docker
+    plan: free
+    region: oregon
+    # Builds only this directory, and only rebuilds when something in it
+    # changes -- a push that touches apps/web does not redeploy the API.
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+
+    # Permitted unauthenticated in SecurityConfig, which it has to be: Render
+    # calls this itself, with no token. If it required auth, every deploy would
+    # fail its health check and roll back.
+    healthCheckPath: /actuator/health
+
+    envVars:
+      # ── Database ────────────────────────────────────────────────────────
+      # Supabase's *session pooler* URL, not the direct connection: the free
+      # tier's direct connections are limited and IPv6-only.
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_USER
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false
+
+      # ── Supabase ────────────────────────────────────────────────────────
+      # Used to verify the JWT on each request.
+      - key: SUPABASE_URL
+        sync: false
+
+      # ── Web origin ──────────────────────────────────────────────────────
+      # The deployed Vercel origin. Without it CORS falls back to localhost and
+      # the browser blocks every call from production. No trailing slash.
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # ── OAuth redirect bases ────────────────────────────────────────────
+      # Both default to localhost, which is correct on a laptop and useless in
+      # production: the provider would send the user back to their own machine
+      # after consent. API base is this service's own https://...onrender.com
+      # URL; web base is the Vercel origin. No trailing slash on either.
+      - key: OAUTH_API_BASE
+        sync: false
+      - key: OAUTH_WEB_BASE
+        sync: false
+
+      # ── Mail providers ──────────────────────────────────────────────────
+      # Not yet issued. The service starts without them; mailbox connection is
+      # what fails, and only when someone tries it.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+
+      # ── Token encryption ────────────────────────────────────────────────
+      # Encrypts stored OAuth refresh tokens at rest. Rotating it makes every
+      # stored token undecryptable and forces all mailboxes to reconnect.
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+
+      # ── Optional ────────────────────────────────────────────────────────
+      # Leave unset and the SDK never initialises. See SentryConfig.
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_ENVIRONMENT
+        value: production
+      # Leave unset and AI enrichment stays off; everything else still works.
+      - key: AI_API_KEY
+        sync: false
