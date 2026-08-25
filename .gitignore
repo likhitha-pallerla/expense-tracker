@@ -49,3 +49,14 @@ Thumbs.db
 # ---- Local tooling ----
 /tools/
 *.log
+
+# Backups. scripts/backup.mjs already refuses to write inside this repository,
+# but this repository is public and a database of bank history is not something
+# to leave guarded by a single check. Belt and braces.
+#
+# Deliberately NOT `*.sql`: the Flyway migrations are .sql files and must stay
+# tracked. `restore.mjs --out` writes decrypted financial data, so send it
+# outside the repository, or name it `*.restored.sql`.
+*.sql.enc
+*.restored.sql
+backups/

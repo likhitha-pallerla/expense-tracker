@@ -302,7 +302,41 @@ Vercel + Render production deploy.
   runs through the same redactor the AI layer uses, since a parse failure
   quotes the alert it could not read. The user is an ID and nothing else.
 
-**Left:** backups and the production deploy.
+**Left:** the production deploy.
+
+**Backups — done.** Worth stating plainly: **Supabase's free tier takes no
+backups at all** — no snapshots, no point-in-time recovery, no support path
+that recovers a dropped table. Whatever `scripts/backup.mjs` writes is the only
+copy of this database outside Supabase's control. It pipes `pg_dump` straight
+through AES-256-GCM to a single file, never writing plaintext to disk, and
+**refuses to write inside this repository** — the repository is public and the
+backup is every transaction in the database. That guard has a test.
+
+The lesson here was that a backup you have not restored is not a backup.
+Decrypting one only proves the passphrase was right. Actually restoring into an
+empty database found **four** defects that `--check` had happily passed:
+row counts read as zero because `pg_dump` writes CRLF through a Windows pipe;
+excluding Supabase's schemas still dragged in event triggers calling
+`extensions.pgrst_ddl_watch()`, fixed by allow-listing `--schema=public`;
+that allow-list then dropped `pg_trgm`, leaving a trigram index whose operator
+class no longer existed; and the auth pass was invisible to `--check`, because
+a `--data-only` dump has no `CREATE TABLE` for the summary to find.
+
+The most consequential finding was the third-party one. Every one of the 24
+user-owned tables has `FOREIGN KEY (user_id) REFERENCES auth.users(id)`, so a
+`public`-only backup is worthless — it fails on the first `ADD CONSTRAINT`, and
+signing in again mints a *new* UUID, so the old `user_id` values could never
+match anything again. The identities have to come back with their original ids,
+before the foreign keys are added. The round-trip is now proved end-to-end:
+identity, owned rows and foreign key all reconnect in a fresh database.
+
+`--check` is the operation meant to run on a schedule, and it **exits non-zero
+when a backup decrypts but is empty**, because a backup that restores cleanly
+into an empty database is still a lost database — the failure that looks most
+like success. Operational detail is in `docs/OPERATIONS.md`, including why
+these must never be uploaded as CI artifacts: on a public repository anyone can
+download them, and ciphertext handed to an attacker is a passphrase ground
+offline at leisure.
 
 **Analytics — done.** PostHog, and like Sentry it is inert unless a key is set;
 the SDK is loaded dynamically, so an installation without analytics never

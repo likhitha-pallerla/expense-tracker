@@ -94,3 +94,22 @@ jobs:
       # The filter tests read packages/shared/sms-filter-vectors.json, the same
       # file the Java suite reads, so the two implementations cannot drift.
       - run: npm test
+
+  scripts:
+    name: Scripts (backup/restore)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      # No dependencies to install: these are plain .mjs files using only the
+      # standard library, so there is nothing to `npm ci`.
+      #
+      # Covers the guard that stops a backup being written into this public
+      # repository, the credential encoding in the connection string, and the
+      # summary that decides whether a backup is empty -- the check that stands
+      # between "the backup restored fine" and "the backup restored nothing".
+      - run: node --test "scripts/*.test.mjs"
