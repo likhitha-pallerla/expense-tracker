@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 import com.expensetracker.api.ai.AiClient;
 import com.expensetracker.api.parsing.Amounts;
 import com.expensetracker.api.profile.UserSettings;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Turning a typed sentence into something the user can confirm.

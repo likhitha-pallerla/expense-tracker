@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 
 import com.expensetracker.api.ai.AiClient;
 import com.expensetracker.api.ai.AiProperties;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 /**
  * The last resort for a message no rule could read.

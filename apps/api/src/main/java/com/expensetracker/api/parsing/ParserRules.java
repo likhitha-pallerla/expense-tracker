@@ -12,8 +12,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Loading and compiling the rules that read payment alerts.
@@ -111,11 +111,15 @@ public class ParserRules {
             throw new IllegalArgumentException("extractors is not valid JSON", ex);
         }
 
-        root.fields().forEachRemaining(entry -> {
+        for (var entry : root.properties()) {
             JsonNode node = entry.getValue();
             String pattern = node.path("pattern").asText(null);
             if (pattern == null || pattern.isBlank()) {
-                return;
+                // continue, not return: this used to be a lambda body, where
+                // return meant "skip this one". In a loop it would mean "stop
+                // and discard every extractor after it", so one malformed
+                // entry would silently disable the rest of the rule.
+                continue;
             }
             Extractor.Kind kind;
             try {
@@ -126,7 +130,7 @@ public class ParserRules {
             }
             fields.put(entry.getKey(),
                     new Extractor(Pattern.compile(pattern), node.path("group").asInt(1), kind));
-        });
+        }
         return fields;
     }
 }

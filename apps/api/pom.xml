@@ -7,7 +7,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.3.5</version>
+    <version>4.1.1</version>
     <relativePath/>
   </parent>
 
@@ -25,6 +25,17 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <!--
+      Spring Boot 4 split the HTTP clients out of the web starter, so
+      RestClient.Builder is no longer auto-configured by depending on
+      spring-boot-starter-web alone. We inject that builder in three places
+      (the AI client, the OAuth token exchange, and mail sync), so the module
+      has to be asked for explicitly.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-restclient</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>

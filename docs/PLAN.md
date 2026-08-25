@@ -285,8 +285,15 @@ Vercel + Render production deploy.
   - *Low.* `/api/health` returned the full Postgres version banner to anonymous
     callers. Now returns only whether the database answered.
 
-**Left:** Sentry, PostHog, backups, a Spring Boot upgrade off the EOL 3.3.x
-line, and the production deploy.
+**Left:** Sentry, PostHog, backups, and the production deploy.
+
+**Framework upgrade — done.** The API was on Spring Boot 3.3.5, which reached
+end of life in June 2025; by mid-2026 the entire 3.x line is unsupported, so
+there was no patch release to move to. Now on **4.1.1**, which is supported
+until July 2027. The migration was mostly Jackson: Spring Boot 4 ships Jackson
+3, which moved to the `tools.jackson` package and made its exceptions
+unchecked. Spring Boot 4 also split the HTTP clients out of the web starter,
+so `spring-boot-starter-restclient` is now an explicit dependency.
 
 **Known limitation:** the API connects to Postgres as `postgres`, which carries
 `BYPASSRLS`. Row-level security is enabled and correct, but it is not what

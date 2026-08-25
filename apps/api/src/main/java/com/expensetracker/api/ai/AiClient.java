@@ -14,8 +14,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * The one place a model is spoken to.
@@ -181,7 +181,11 @@ public class AiClient {
         try {
             JsonNode node = json.readTree(text.substring(open, close + 1));
             return node.isObject() ? Optional.of(node) : Optional.empty();
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+        } catch (tools.jackson.core.JacksonException e) {
+            // A model returning something that is not JSON is an expected
+            // outcome, not an error worth propagating: the caller falls back to
+            // the deterministic path. Jackson 3 makes this unchecked, so the
+            // catch is now a deliberate choice rather than a requirement.
             return Optional.empty();
         }
     }
