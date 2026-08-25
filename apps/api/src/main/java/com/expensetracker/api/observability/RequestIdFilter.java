@@ -38,7 +38,9 @@ import jakarta.servlet.http.HttpServletResponse;
 public class RequestIdFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-Request-Id";
-    static final String REQUEST_ID = "requestId";
+
+    /** Public because the exception handler quotes it back to the caller. */
+    public static final String REQUEST_ID = "requestId";
     static final String USER_ID = "userId";
 
     /** Long enough to be unique, short enough to read down a phone line. */

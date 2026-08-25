@@ -33,6 +33,17 @@
       (the AI client, the OAuth token exchange, and mail sync), so the module
       has to be asked for explicitly.
     -->
+    <!--
+      Error tracking. Inert without a DSN: with sentry.dsn unset the SDK is
+      disabled and never opens a connection, so a fork or a local checkout does
+      not need an account to run.
+    -->
+    <dependency>
+      <groupId>io.sentry</groupId>
+      <artifactId>sentry-spring-boot-4-starter</artifactId>
+      <version>8.53.0</version>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-restclient</artifactId>

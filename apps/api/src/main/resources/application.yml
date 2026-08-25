@@ -124,6 +124,30 @@ management:
     health:
       show-details: never
 
+# Error reporting. Off unless SENTRY_DSN is set, which is how a fork, a
+# contributor and a local checkout all run without an account.
+#
+# The settings below matter as much as the DSN does: this application handles
+# bank alerts and transaction amounts, and Sentry's defaults would attach them
+# to every event. See SentryConfig for the scrubbing that backs these up.
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:local}
+  # Never attach the email, IP address or username of the person who hit the
+  # error. The user id is added back deliberately in SentryConfig.
+  send-default-pii: false
+  # Request bodies here are bank alerts and transactions. None of them help
+  # anyone read a stack trace.
+  max-request-body-size: none
+  # Performance tracing off: it is quota this project would rather spend on
+  # actual errors, and the timings are already in the logs.
+  traces-sample-rate: 0
+  # 4xx are the client's problem and would drown the 5xx that are ours.
+  exception-resolver-order: 2147483647
+  logging:
+    minimum-event-level: error
+    minimum-breadcrumb-level: info
+
 logging:
   level:
     org.flywaydb: INFO

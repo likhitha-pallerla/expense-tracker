@@ -284,8 +284,25 @@ Vercel + Render production deploy.
     so being framable was a working clickjacking attack.
   - *Low.* `/api/health` returned the full Postgres version banner to anonymous
     callers. Now returns only whether the database answered.
+- **Error tracking** — two parts. First, a catch-all exception handler: before
+  it, an unexpected exception fell through to Spring's default error shape,
+  which meant the one response a user could actually quote back to us — the
+  request ID — was missing from exactly the failures we most needed to trace.
+  Second, Sentry, wired but **inert unless `SENTRY_DSN` is set**, so a fork or a
+  local checkout needs no account.
 
-**Left:** Sentry, PostHog, backups, and the production deploy.
+  The scrubbing matters more than the wiring. Sentry's defaults attach request
+  bodies, query strings, cookies and headers to every event, and in this
+  application those are bank alerts, transaction amounts and session tokens. An
+  error report is not a good enough reason to copy someone's spending history
+  onto a third party's servers, so events are stripped to the stack trace, the
+  route and the request ID; headers are filtered by **allow-list** rather than
+  deny-list, because a deny-list is wrong the first time a new header appears
+  and the cost of being wrong is a leaked `Authorization` value. Exception text
+  runs through the same redactor the AI layer uses, since a parse failure
+  quotes the alert it could not read. The user is an ID and nothing else.
+
+**Left:** PostHog, backups, and the production deploy.
 
 **Framework upgrade — done.** The API was on Spring Boot 3.3.5, which reached
 end of life in June 2025; by mid-2026 the entire 3.x line is unsupported, so

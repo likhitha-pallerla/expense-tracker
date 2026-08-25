@@ -6,12 +6,17 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
+
+import com.expensetracker.api.observability.RequestIdFilter;
 
 /**
  * Turns exceptions into a consistent JSON shape the web and mobile clients can
@@ -22,6 +27,8 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail onValidationFailure(MethodArgumentNotValidException ex) {
@@ -59,6 +66,41 @@ public class ApiExceptionHandler {
         problem.setTitle("Conflict");
         problem.setDetail(describe(ex));
         problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    /**
+     * Anything not handled above.
+     *
+     * <p>Without this, an unexpected exception falls through to Spring's
+     * default error handling, which returns a different JSON shape from every
+     * other error the clients see, and says nothing about which request it was.
+     *
+     * <p>The exception's own message never reaches the caller. Messages from
+     * deep in a stack quote connection strings, SQL and file paths, and the
+     * person reading them cannot act on any of it anyway. What they get instead
+     * is the request id, which is in the log next to the stack trace -- so
+     * "something went wrong, quote ab12cd34" is a report that can actually be
+     * followed up, rather than a screenshot of a stack trace.
+     */
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail onUnexpected(Exception ex) {
+        String requestId = MDC.get(RequestIdFilter.REQUEST_ID);
+
+        // error, not warn: nothing reaches here that was anticipated, so every
+        // one of these is worth a person looking at.
+        log.error("Unhandled exception on request {}", requestId, ex);
+
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
+        problem.setTitle("Something went wrong");
+        problem.setDetail(requestId == null
+                ? "Something went wrong at our end. Please try again."
+                : "Something went wrong at our end. Please try again, and quote "
+                        + requestId + " if it keeps happening.");
+        problem.setProperty("timestamp", Instant.now());
+        if (requestId != null) {
+            problem.setProperty("requestId", requestId);
+        }
         return problem;
     }
 
