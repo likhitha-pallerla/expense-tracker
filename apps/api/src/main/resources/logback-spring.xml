@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logging is here to answer one question: "what happened to this request?"
+
+  Every line carries a request id, so a user quoting the X-Request-Id from a
+  failed page recovers the whole story in one grep. Lines from concurrent
+  requests interleave; without that id they are unreadable.
+
+  Not JSON, deliberately. JSON logging is worth its unreadability when
+  something is parsing it, and nothing here is: this deploys to a platform
+  whose log viewer shows a plain stream. Emitting JSON would make the logs
+  harder for the only reader they have. Every field a parser would want is
+  present and in a fixed position, so if a log aggregator is ever added,
+  swapping this encoder is a small change.
+
+  What is not logged, on purpose: amounts, merchants, message bodies, email
+  addresses, tokens. A log that records what someone spent is a second copy of
+  their financial history somewhere less protected than the database.
+-->
+<configuration>
+
+  <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="api"/>
+
+  <!-- Local: short timestamps, colour, no host noise. -->
+  <springProfile name="!prod">
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder>
+        <pattern>%d{HH:mm:ss.SSS} %highlight(%-5level) %cyan(%X{requestId:-________}) %logger{28} - %msg%n</pattern>
+      </encoder>
+    </appender>
+  </springProfile>
+
+  <!--
+    Production: full UTC timestamps, no colour codes (they become escape
+    sequences in a captured stream), and the user id included so a support
+    request can be traced without asking the person for anything they do not
+    have. That id is a random UUID; it identifies a row, not a person.
+  -->
+  <springProfile name="prod">
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder>
+        <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSS'Z', UTC} %-5level app=${appName} req=%X{requestId:--} user=%X{userId:--} logger=%logger{36} msg="%replace(%msg){'"','\\"'}"%n%wEx</pattern>
+      </encoder>
+    </appender>
+  </springProfile>
+
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+
+  <logger name="com.expensetracker" level="DEBUG"/>
+  <logger name="access" level="INFO"/>
+
+  <!-- Flyway announces every migration on every boot; once is enough. -->
+  <logger name="org.flywaydb.core.internal.sqlscript" level="WARN"/>
+
+</configuration>

@@ -1,6 +1,6 @@
 # End-to-end checks
 
-Three scripts that exercise the API against a **real Supabase project** rather
+Four scripts that exercise the API against a **real Supabase project** rather
 than a mock. They are not part of `mvn test` and CI does not run them, because
 they need credentials and a database that CI does not have.
 
@@ -13,17 +13,18 @@ of these scripts found a real bug the unit tests could not have caught:
 | `smoke.mjs` | `"using card 4821"` never matched, because the account pattern required the sentence to *end* with the keyword |
 | `ai.mjs` | `"250g of beans"` was read as an amount of ₹250, inventing a figure from a sentence that named none |
 | `ai.mjs` | Redaction assertions passed against an empty string — the model was never being called, so nothing was being checked |
+| `quarantine.mjs` | Written to prove a fix rather than find a bug — see below |
 
 ## Running them
 
-Both need the API running and `../../../.env` filled in. The `.env` path is
+All need the API running and `../../../.env` filled in. The `.env` path is
 resolved from the script, so it does not matter which directory you are in.
 
 ### `smoke.mjs` — the default path, AI off
 
-26 checks: sign-up, accounts, categories, transactions, duplicate detection,
-budgets, goals, the health score, forecasting, natural-language entry, and that
-the schema is where the code thinks it is.
+35 checks: sign-up, accounts, categories, transactions, duplicate detection,
+budgets, goals, the health score, forecasting, natural-language entry, request
+tracing, rate limiting, and that the schema is where the code thinks it is.
 
 ```bash
 # terminal 1
@@ -34,6 +35,28 @@ node apps/api/e2e/smoke.mjs
 
 This is the one to run before any release. AI must be **off** — that is the
 configuration nearly everyone will use.
+
+### `quarantine.mjs` — the mail sender gate
+
+18 checks. Mail is not authenticated: anyone who knows your address can send
+you a message reading `Rs 48,500 debited from a/c XX4412`, and a parser that
+reads any message mentioning an amount will read that one too. This script
+sends exactly that message and asserts it does **not** become a transaction.
+
+It also covers the things that make the gate liveable rather than merely safe:
+a real bank still gets through untouched, SMS is not caught by a rule about
+domains, a held message can be released in one click, a consumer mail provider
+is refused with a reason, a lookalike domain (`my-hdfcbank.net.evil.example`)
+is still held, and withdrawing trust does not retroactively delete what it
+already recorded.
+
+```bash
+node apps/api/e2e/quarantine.mjs
+```
+
+Run this after touching `SenderTrust`, `ParseService`, or anything in the sync
+path. The unit tests check the judgement; only this checks that the judgement
+is actually consulted.
 
 ### `ai.mjs` — the AI layer, against a scripted stand-in
 

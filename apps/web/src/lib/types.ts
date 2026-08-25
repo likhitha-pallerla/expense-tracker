@@ -417,6 +417,8 @@ export type ParseResult = {
   merged: number;
   ignored: number;
   failed: number;
+  /** Held back because the sender could not be established as a bank. */
+  quarantined: number;
   /** Built by the API; the counts read as nonsense apart. */
   summary: string;
 };
@@ -425,7 +427,42 @@ export type ParseQueue = {
   pending: number;
   failed: number;
   parsed: number;
+  quarantined: number;
   hasWork: boolean;
+  /**
+   * Something is waiting on a decision only the user can make. Distinct from
+   * hasWork, which the read button clears; no amount of reading clears these.
+   */
+  needsAttention: boolean;
+};
+
+/**
+ * A sender whose messages are being held, with all of its messages counted
+ * together.
+ *
+ * Grouped by sender because the question being asked is about the sender. Ten
+ * alerts from one unrecognised bank is one decision, and asking it ten times
+ * teaches the user to stop reading it.
+ */
+export type HeldSender = {
+  sender: string | null;
+  domain: string | null;
+  messages: number;
+  latest: string | null;
+  latestSubject: string | null;
+  reason: string | null;
+  /**
+   * False for consumer mail providers, where trusting the domain would mean
+   * trusting everyone with an address there. The interface explains instead of
+   * offering a button that would be refused.
+   */
+  canBeTrusted: boolean;
+};
+
+export type TrustedSender = {
+  domain: string;
+  note: string | null;
+  since: string;
 };
 
 /**

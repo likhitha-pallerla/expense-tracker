@@ -5,6 +5,7 @@ import { NavLinks } from "@/components/nav-links";
 import { SignOutButton } from "@/components/sign-out-button";
 import { apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase/server";
+import type { ParseQueue } from "@/lib/types";
 
 /**
  * Shell for every signed-in page.
@@ -33,11 +34,15 @@ export async function AppShell({
   let reviewCount = 0;
   let alertCount = 0;
   try {
-    const [duplicates, alerts] = await Promise.all([
+    const [duplicates, alerts, queue] = await Promise.all([
       apiFetch<{ pending: number }>("/api/duplicates/count"),
       apiFetch<{ unread: number }>("/api/notifications/count"),
+      apiFetch<ParseQueue>("/api/parse/queue"),
     ]);
-    reviewCount = duplicates.pending;
+    // Both land on /review and both need the same thing from the user: a
+    // decision. Counting only duplicates would leave held alerts invisible
+    // until someone happened to open the page.
+    reviewCount = duplicates.pending + queue.quarantined;
     alertCount = alerts.unread;
   } catch {
     reviewCount = 0;

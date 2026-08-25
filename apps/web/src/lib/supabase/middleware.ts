@@ -16,9 +16,16 @@ function isPublic(pathname: string): boolean {
  *
  * The response object must be the one Supabase wrote cookies onto, otherwise
  * refreshed tokens are silently dropped and the user is logged out at random.
+ *
+ * @param requestHeaders headers to forward to the page being rendered, used to
+ *                       pass the per-request CSP nonce through to Next so it
+ *                       can stamp its own hydration scripts with it
  */
-export async function updateSession(request: NextRequest) {
-  let response = NextResponse.next({ request });
+export async function updateSession(
+  request: NextRequest,
+  requestHeaders: Headers = new Headers(request.headers),
+) {
+  let response = NextResponse.next({ request: { headers: requestHeaders } });
 
   const supabase = createServerClient(env.supabaseUrl, env.supabaseAnonKey, {
     cookies: {
@@ -29,7 +36,7 @@ export async function updateSession(request: NextRequest) {
         cookiesToSet.forEach(({ name, value }) =>
           request.cookies.set(name, value),
         );
-        response = NextResponse.next({ request });
+        response = NextResponse.next({ request: { headers: requestHeaders } });
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options),
         );

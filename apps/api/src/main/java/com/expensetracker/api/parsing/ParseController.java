@@ -5,9 +5,11 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -68,5 +70,57 @@ public class ParseController {
                     "That message is not waiting to be read.");
         }
         return Map.of("ignored", true);
+    }
+
+    /** Senders whose messages are being held, grouped so each is one decision. */
+    @GetMapping("/held")
+    public List<ParseService.HeldSender> held() {
+        return parsing.heldSenders(CurrentUser.id());
+    }
+
+    @GetMapping("/trusted")
+    public List<ParseService.TrustedSender> trusted() {
+        return parsing.trustedSenders(CurrentUser.id());
+    }
+
+    /**
+     * Accepts a sender and releases everything held from it.
+     *
+     * <p>Refusal is a 400 with the reason in it, because the reason is the
+     * point: the user asked for something that would undo the protection, and
+     * a bare error code would read like a bug.
+     */
+    @PostMapping("/trusted")
+    public Map<String, Object> trust(@RequestBody TrustRequest request) {
+        try {
+            int released = parsing.trustSender(CurrentUser.id(), request.domain(),
+                    request.note());
+            return Map.of("domain", request.domain(), "released", released);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/trusted/{domain}")
+    public Map<String, Object> untrust(@PathVariable String domain) {
+        if (!parsing.untrustSender(CurrentUser.id(), domain)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "That sender is not on your list.");
+        }
+        return Map.of("removed", true);
+    }
+
+    /** Throws away everything held from a sender, without trusting it. */
+    @PostMapping("/held/discard")
+    public Map<String, Object> discardHeld(@RequestBody DiscardRequest request) {
+        return Map.of("discarded",
+                parsing.discardHeld(CurrentUser.id(), request.sender()));
+    }
+
+    /** @param note optional, e.g. the name of the bank, for the user's own recall */
+    public record TrustRequest(String domain, String note) {
+    }
+
+    public record DiscardRequest(String sender) {
     }
 }

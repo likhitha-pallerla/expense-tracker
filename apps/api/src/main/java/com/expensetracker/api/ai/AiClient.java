@@ -93,7 +93,12 @@ public class AiClient {
      *
      * @param userId  whose budget this comes out of
      * @param purpose a short label for logs; never contains user data
-     * @param system  the instruction
+     * @param system  the instruction. Must be a constant defined in code and
+     *                never assembled from anything a message supplied: unlike
+     *                {@code user} it is not scrubbed, so a value derived from
+     *                an email would carry that email's text out unredacted and
+     *                sit above it in the prompt, where it is likelier to be
+     *                obeyed. Every current caller passes a literal.
      * @param user    the data, which is scrubbed before it leaves
      * @return the parsed object, or empty for every possible failure
      */

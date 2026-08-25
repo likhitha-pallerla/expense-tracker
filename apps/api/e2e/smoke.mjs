@@ -211,6 +211,69 @@ async function main() {
       parsed.status === 200 && parsed.body?.read === 0,
       `${parsed.status} ${JSON.stringify(parsed.body)}`);
 
+    console.log('\n-- every request can be traced --');
+
+    const traced = await fetch(`${API}/api/me`, { headers: auth });
+    check('a request comes back with an id to quote',
+      (traced.headers.get('x-request-id') ?? '').length > 0,
+      traced.headers.get('x-request-id'));
+
+    const supplied = await fetch(`${API}/api/me`, {
+      headers: { ...auth, 'X-Request-Id': 'trace-from-the-web-app' },
+    });
+    check('and an id supplied by the caller is carried through',
+      supplied.headers.get('x-request-id') === 'trace-from-the-web-app',
+      supplied.headers.get('x-request-id'));
+
+    // A caller who can put a newline in a log line can write their own log
+    // entries. The header is echoed, so this is checked on what comes back.
+    const forged = await fetch(`${API}/api/me`, {
+      headers: { ...auth, 'X-Request-Id': 'abc-def-0123456789' },
+    });
+    check('an id is limited to characters that cannot forge a log line',
+      /^[A-Za-z0-9._:-]+$/.test(forged.headers.get('x-request-id') ?? ''),
+      forged.headers.get('x-request-id'));
+
+    console.log('\n-- one caller cannot exhaust the instance --');
+
+    check('a normal request reports what is left of the allowance',
+      Number(traced.headers.get('x-ratelimit-remaining')) > 0,
+      traced.headers.get('x-ratelimit-remaining'));
+
+    // Hammered without a token, so this spends the per-IP allowance rather
+    // than the signed-in user's -- the rest of this script still needs theirs.
+    // The OAuth callback is the only endpoint reachable without a token that
+    // is not exempt from limiting.
+    let limited = null;
+    for (let i = 0; i < 40 && !limited; i++) {
+      const res = await fetch(`${API}/api/connections/callback/gmail?state=x&code=y`, {
+        redirect: 'manual',
+      });
+      if (res.status === 429) limited = res;
+    }
+
+    check('an unauthenticated flood is eventually refused', limited !== null,
+      limited === null ? 'never returned 429' : '429');
+
+    if (limited) {
+      const retryAfter = Number(limited.headers.get('retry-after'));
+      check('and is told when to come back', retryAfter >= 1, `${retryAfter}`);
+
+      const problem = await limited.json().catch(() => null);
+      check('with a message saying what was throttled',
+        typeof problem?.detail === 'string' && problem.detail.length > 0,
+        JSON.stringify(problem));
+      check('and the standard problem shape the clients already handle',
+        problem?.status === 429, JSON.stringify(problem));
+    }
+
+    // The point of classifying by cost: the flood above must not have touched
+    // the signed-in user's ability to read their own data.
+    const stillWorks = await get('/api/accounts');
+    check('while a signed-in user is unaffected',
+      Array.isArray(stillWorks) || Array.isArray(stillWorks?.items),
+      JSON.stringify(stillWorks).slice(0, 120));
+
   } finally {
     if (userId) {
       const deleted = await fetch(

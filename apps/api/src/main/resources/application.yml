@@ -98,6 +98,23 @@ app:
     # rather than turned into a transaction.
     min-confidence: ${AI_MIN_CONFIDENCE:0.75}
 
+  rate-limit:
+    # Burst limits, per user, held in memory on this instance. They exist so
+    # one account cannot make a small shared machine unusable for everyone
+    # else. A person using the application normally will never meet them.
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    read-per-minute: ${RATE_LIMIT_READ_PER_MINUTE:300}
+    write-per-minute: ${RATE_LIMIT_WRITE_PER_MINUTE:60}
+    # Mailbox sync, message parsing and statement import: a network round trip
+    # and a write per transaction found, so charged by the hour rather than the
+    # minute.
+    sync-per-hour: ${RATE_LIMIT_SYNC_PER_HOUR:30}
+    # Anything that can reach a model. The AI's own daily budget caps the day;
+    # this stops a client spending all of it in a minute.
+    ai-per-hour: ${RATE_LIMIT_AI_PER_HOUR:60}
+    # Per IP, for the OAuth callback and anything else with no user yet.
+    anonymous-per-minute: ${RATE_LIMIT_ANONYMOUS_PER_MINUTE:20}
+
 management:
   endpoints:
     web:

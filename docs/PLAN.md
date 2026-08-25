@@ -259,9 +259,40 @@ a vision model, which is a different shape of problem from the text path built h
 and cannot be tested without one. Building an unverifiable path into a money app is
 worse than not building it. Revisit when there is a real user asking for it.
 
-### Phase 6 — Harden
+### Phase 6 — Harden — *in progress*
 Sentry · PostHog · rate limiting · structured logging · backups · security review ·
 Vercel + Render production deploy.
+
+**Done:**
+
+- **Rate limiting** — per-user token buckets, priced by what a request costs us:
+  AI calls, writes and reads have separate allowances. In-memory and therefore
+  per-instance, which is honest for a single free-tier dyno and documented as a
+  thing to replace if that ever changes.
+- **Structured logging** — a request ID on every log line and returned in
+  `X-Request-Id`, so a user reporting "it failed at about 3pm" can be traced.
+  Deliberately readable text rather than JSON: Render's free tier has no log
+  aggregator, so the only reader is a human.
+- **Security review** — three findings, all fixed:
+  - *High.* Mail was parsed without checking **who sent it**. Anyone who knew a
+    user's address could mail them a fake alert and it became a real
+    transaction. Mail now has to come from a recognised institution or a sender
+    the user has accepted; anything else is **held** and shown to them. SMS
+    already gated on its sender and is unaffected.
+  - *Medium.* No security headers on the web app. Added a nonce-based CSP plus
+    `frame-ancestors`/`X-Frame-Options` — several pages act on a single click,
+    so being framable was a working clickjacking attack.
+  - *Low.* `/api/health` returned the full Postgres version banner to anonymous
+    callers. Now returns only whether the database answered.
+
+**Left:** Sentry, PostHog, backups, a Spring Boot upgrade off the EOL 3.3.x
+line, and the production deploy.
+
+**Known limitation:** the API connects to Postgres as `postgres`, which carries
+`BYPASSRLS`. Row-level security is enabled and correct, but it is not what
+protects an API request — the `user_id` filter in each query is. That is a
+second line of defence the API currently does without, and moving it to a
+non-superuser role is the single highest-value change left in this phase.
 
 *Net worth, investments and liabilities remain post-V2 and are only worth building if
 usage evidence supports them.*

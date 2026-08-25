@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -65,7 +66,19 @@ public class ParseService {
 
     /** One stored message, as much as parsing needs of it. */
     private record Pending(UUID id, UUID connectionId, String sender, String subject,
-            String body, Instant receivedAt) {
+            String body, Instant receivedAt, String provider) {
+
+        /**
+         * Whether this arrived as mail, and so has a sender worth judging.
+         *
+         * <p>SMS is excluded because it has no comparable sender: a text
+         * arrives from a shortcode, not a domain, and {@code SmsFilter} has
+         * always refused those it cannot attribute. CSV imports and manual
+         * entries are the user's own doing and are not gated at all.
+         */
+        boolean isMail() {
+            return "gmail".equals(provider) || "outlook".equals(provider);
+        }
     }
 
     /**
@@ -82,30 +95,33 @@ public class ParseService {
             // here leaves the messages pending; marking them failed would throw
             // away work that a fixed rule would have completed.
             log.error("No usable parser rules; leaving messages pending for user {}", userId);
-            return new ParseResult(0, 0, 0, 0, 0);
+            return new ParseResult(0, 0, 0, 0, 0, 0);
         }
 
         ZoneId zone = settings.zoneOf(userId);
         List<Pending> pending = pending(userId);
+        Set<String> trusted = trustedDomains(userId);
 
         int imported = 0;
         int merged = 0;
         int failed = 0;
         int ignored = 0;
+        int quarantined = 0;
 
         for (Pending message : pending) {
-            Outcome outcome = parseOne(userId, message, loaded, zone);
+            Outcome outcome = parseOne(userId, message, loaded, zone, trusted);
             switch (outcome) {
                 case IMPORTED -> imported++;
                 case MERGED -> merged++;
                 case IGNORED -> ignored++;
                 case FAILED -> failed++;
+                case QUARANTINED -> quarantined++;
             }
         }
-        return new ParseResult(pending.size(), imported, merged, ignored, failed);
+        return new ParseResult(pending.size(), imported, merged, ignored, failed, quarantined);
     }
 
-    private enum Outcome { IMPORTED, MERGED, IGNORED, FAILED }
+    private enum Outcome { IMPORTED, MERGED, IGNORED, FAILED, QUARANTINED }
 
     /**
      * One message, in its own database transaction so a failure is contained.
@@ -117,9 +133,25 @@ public class ParseService {
      * every message would share one transaction, which is exactly what this is
      * trying to avoid.
      */
-    private Outcome parseOne(UUID userId, Pending message, List<ParserRule> loaded, ZoneId zone) {
+    private Outcome parseOne(UUID userId, Pending message, List<ParserRule> loaded, ZoneId zone,
+            Set<String> trusted) {
         try {
             return tx.execute(status -> {
+                // Before anything is read, let alone written. A message that
+                // cannot be attributed to an institution must not become a
+                // transaction on the strength of its own contents, because its
+                // contents are exactly what an attacker controls.
+                //
+                // Mail only: a text message has no sender domain, and SmsFilter
+                // has always refused shortcodes it cannot attribute.
+                if (message.isMail()) {
+                    SenderTrust.Verdict verdict = SenderTrust.judge(message.sender(), trusted);
+                    if (!verdict.isAccepted()) {
+                        quarantine(userId, message, verdict);
+                        return Outcome.QUARANTINED;
+                    }
+                }
+
                 ParsedAlert parsed = AlertParser.parse(message.sender(), message.subject(),
                         message.body(), message.receivedAt(), zone, loaded);
 
@@ -234,8 +266,10 @@ public class ParseService {
 
     private List<Pending> pending(UUID userId) {
         return jdbc.query("""
-                select r.id, r.connection_id, r.sender, r.subject, r.body, r.received_at
+                select r.id, r.connection_id, r.sender, r.subject, r.body, r.received_at,
+                       c.provider::text as provider
                   from raw_messages r
+                  left join source_connections c on c.id = r.connection_id
                  where r.user_id = ? and r.status = 'pending'
                    and not exists (
                        select 1 from transactions t
@@ -251,8 +285,53 @@ public class ParseService {
                         rs.getString("body"),
                         rs.getTimestamp("received_at") == null
                                 ? null
-                                : rs.getTimestamp("received_at").toInstant()),
+                                : rs.getTimestamp("received_at").toInstant(),
+                        rs.getString("provider")),
                 userId, DEFAULT_LIMIT);
+    }
+
+    /**
+     * Domains this user has accepted as sources of payment alerts.
+     *
+     * <p>Read once per pass rather than per message: the list is small, changes
+     * only when the user acts, and a query per message would turn one sync into
+     * hundreds of round trips.
+     */
+    private Set<String> trustedDomains(UUID userId) {
+        return Set.copyOf(jdbc.queryForList(
+                "select domain from trusted_senders where user_id = ?",
+                String.class, userId));
+    }
+
+    /**
+     * Holds a message back and says why, in words the user is asked to act on.
+     *
+     * <p>Not deleted, and not marked failed. Failed means "we tried and could
+     * not read it", which invites a retry that would fail the same way. This is
+     * a different thing: the message was readable and was deliberately not
+     * acted on, and only the user can resolve it.
+     */
+    private void quarantine(UUID userId, Pending message, SenderTrust.Verdict verdict) {
+        String reason = switch (verdict) {
+            case NOT_AN_INSTITUTION -> SenderTrust.domainOf(message.sender())
+                    .map(domain -> "This came from " + domain
+                            + ", which is a personal mail provider rather than a bank. "
+                            + "Anyone can send from an address there, so it will not be "
+                            + "recorded automatically.")
+                    .orElse("This message has no sender we can check, so it will not be "
+                            + "recorded automatically.");
+            case UNRECOGNISED -> "This came from " + SenderTrust.domainOf(message.sender())
+                    .orElse("an unknown address")
+                    + ", which we do not recognise as a bank. Confirm the sender to record "
+                    + "it and anything else from there.";
+            default -> "Held for review.";
+        };
+
+        jdbc.update("""
+                update raw_messages
+                   set status = 'quarantined', quarantine_reason = ?, parsed_at = now()
+                 where id = ? and user_id = ?
+                """, reason, message.id(), userId);
     }
 
     private void markParsed(UUID userId, UUID messageId, ParsedAlert parsed,
@@ -360,13 +439,136 @@ public class ParseService {
     public ParseQueue queue(UUID userId) {
         return jdbc.queryForObject("""
                 select
-                  count(*) filter (where status = 'pending') as pending,
-                  count(*) filter (where status = 'failed')  as failed,
-                  count(*) filter (where status = 'parsed')  as parsed
+                  count(*) filter (where status = 'pending')     as pending,
+                  count(*) filter (where status = 'failed')      as failed,
+                  count(*) filter (where status = 'parsed')      as parsed,
+                  count(*) filter (where status = 'quarantined') as quarantined
                 from raw_messages where user_id = ?
                 """,
                 (rs, row) -> new ParseQueue(rs.getInt("pending"), rs.getInt("failed"),
-                        rs.getInt("parsed")),
+                        rs.getInt("parsed"), rs.getInt("quarantined")),
                 userId);
+    }
+
+    /**
+     * Senders being held, grouped by domain.
+     *
+     * <p>Grouped because the question is about the sender, not the message. Ten
+     * alerts from one unrecognised bank is one decision, and asking it ten
+     * times teaches the user to stop reading it.
+     */
+    public List<HeldSender> heldSenders(UUID userId) {
+        return jdbc.query("""
+                select r.sender, count(*) as messages, max(r.received_at) as latest,
+                       min(r.quarantine_reason) as reason,
+                       (array_agg(r.subject order by r.received_at desc))[1] as latest_subject
+                  from raw_messages r
+                 where r.user_id = ? and r.status = 'quarantined'
+                 group by r.sender
+                 order by max(r.received_at) desc nulls last
+                 limit 50
+                """,
+                (rs, row) -> new HeldSender(
+                        rs.getString("sender"),
+                        SenderTrust.domainOf(rs.getString("sender")).orElse(null),
+                        rs.getInt("messages"),
+                        rs.getTimestamp("latest") == null
+                                ? null
+                                : rs.getTimestamp("latest").toInstant(),
+                        rs.getString("latest_subject"),
+                        rs.getString("reason"),
+                        SenderTrust.canBeTrusted(rs.getString("sender"))),
+                userId);
+    }
+
+    /** Domains this user has accepted, newest first. */
+    public List<TrustedSender> trustedSenders(UUID userId) {
+        return jdbc.query("""
+                select domain, note, created_at
+                  from trusted_senders
+                 where user_id = ?
+                 order by created_at desc
+                """,
+                (rs, row) -> new TrustedSender(
+                        rs.getString("domain"),
+                        rs.getString("note"),
+                        rs.getTimestamp("created_at").toInstant()),
+                userId);
+    }
+
+    /**
+     * Accepts a domain and releases everything held from it.
+     *
+     * <p>The messages go back to pending rather than being parsed here, so they
+     * take exactly the same path as any other alert — including duplicate
+     * detection, which matters because a held message may well have already
+     * arrived by SMS.
+     *
+     * @return how many messages were released
+     * @throws IllegalArgumentException if the domain is one that may never be trusted
+     */
+    @Transactional
+    public int trustSender(UUID userId, String rawDomain, String note) {
+        String domain = SenderTrust.domainOf(rawDomain)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "That does not look like a sender we can recognise."));
+
+        if (!SenderTrust.canBeTrusted(domain)) {
+            // Refused rather than obeyed. Trusting a consumer mail provider
+            // means trusting everyone who has an address there, which is the
+            // whole hole this closes.
+            throw new IllegalArgumentException(domain
+                    + " is a personal mail provider, so anyone can send from it. "
+                    + "Alerts from there will always need confirming by hand.");
+        }
+
+        jdbc.update("""
+                insert into trusted_senders (user_id, domain, note)
+                values (?, ?, ?)
+                on conflict (user_id, domain) do nothing
+                """, userId, domain, note);
+
+        return jdbc.update("""
+                update raw_messages
+                   set status = 'pending', quarantine_reason = null, parsed_at = null
+                 where user_id = ? and status = 'quarantined'
+                   and (lower(sender) like ? or lower(sender) like ?)
+                """, userId, "%@" + domain, "%." + domain);
+    }
+
+    /** Withdraws trust. Messages already recorded are left alone. */
+    @Transactional
+    public boolean untrustSender(UUID userId, String rawDomain) {
+        String domain = SenderTrust.domainOf(rawDomain).orElse(null);
+        if (domain == null) {
+            return false;
+        }
+        return jdbc.update("delete from trusted_senders where user_id = ? and domain = ?",
+                userId, domain) > 0;
+    }
+
+    /** Discards everything held from a sender, without trusting it. */
+    @Transactional
+    public int discardHeld(UUID userId, String rawSender) {
+        return jdbc.update("""
+                update raw_messages
+                   set status = 'ignored', quarantine_reason = null, parsed_at = now()
+                 where user_id = ? and status = 'quarantined' and sender = ?
+                """, userId, rawSender);
+    }
+
+    /**
+     * A sender whose messages are being held.
+     *
+     * @param canBeTrusted whether accepting it is even offered; false for a
+     *                     consumer mail provider, so the interface can explain
+     *                     rather than present a button that will be refused
+     */
+    public record HeldSender(String sender, String domain, int messages, Instant latest,
+            String latestSubject, String reason, boolean canBeTrusted) {
+    }
+
+    /** A domain the user has accepted. */
+    public record TrustedSender(String domain, String note, Instant since) {
     }
 }
