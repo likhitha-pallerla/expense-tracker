@@ -38,7 +38,7 @@ export function Field({ label, name, error, hint, children }: FieldProps) {
   );
 }
 
-type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
+type InputProps = React.ComponentProps<"input"> & {
   error?: string;
 };
 
@@ -54,7 +54,7 @@ export function Input({ error, className = "", ...props }: InputProps) {
   );
 }
 
-type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & {
+type SelectProps = React.ComponentProps<"select"> & {
   error?: string;
 };
 
@@ -70,7 +70,7 @@ export function Select({ error, className = "", ...props }: SelectProps) {
   );
 }
 
-type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
+type TextareaProps = React.ComponentProps<"textarea"> & {
   error?: string;
 };
 
@@ -110,11 +110,17 @@ export function FormMessage({ state }: { state: FormState }) {
   );
 }
 
+/**
+ * Props are taken from the element rather than its attribute list so that
+ * `ref` is included. React 19 passes refs to function components as ordinary
+ * props, and every control here forwards its props straight to the DOM node,
+ * so a caller that needs to focus a control can simply ask for it.
+ */
 export function Button({
   variant = "primary",
   className = "",
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+}: React.ComponentProps<"button"> & {
   variant?: "primary" | "secondary" | "danger";
 }) {
   const styles = {

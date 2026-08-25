@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import {
@@ -10,9 +11,11 @@ import {
   TopMerchants,
   Trend,
 } from "@/components/insights-view";
+import { MonthSummary, MonthSummarySkeleton } from "@/components/month-summary";
+import { QuickAdd } from "@/components/quick-add";
 import { Card, EmptyState } from "@/components/ui/form";
 import { apiFetch } from "@/lib/api";
-import type { Insights, Profile } from "@/lib/types";
+import type { Account, Category, Insights, Profile } from "@/lib/types";
 
 export const metadata = { title: "Dashboard" };
 
@@ -32,16 +35,29 @@ function monthParam(params: SearchParams): string | null {
 async function load(
   month: string | null,
 ): Promise<
-  { ok: true; profile: Profile; insights: Insights } | { ok: false; error: string }
+  | {
+      ok: true;
+      profile: Profile;
+      insights: Insights;
+      accounts: Account[];
+      categories: Category[];
+    }
+  | { ok: false; error: string }
 > {
   try {
     // /api/me provisions the profile, categories and default account on first
     // call, so it must resolve before anything else is requested.
     const profile = await apiFetch<Profile>("/api/me");
-    const insights = await apiFetch<Insights>(
-      month ? `/api/insights?month=${month}` : "/api/insights",
-    );
-    return { ok: true, profile, insights };
+
+    // The rest are independent of each other, so they go together. The quick-add
+    // box needs the account and category lists to offer a correction when a
+    // name in the sentence matched nothing.
+    const [insights, accounts, categories] = await Promise.all([
+      apiFetch<Insights>(month ? `/api/insights?month=${month}` : "/api/insights"),
+      apiFetch<Account[]>("/api/accounts"),
+      apiFetch<Category[]>("/api/categories"),
+    ]);
+    return { ok: true, profile, insights, accounts, categories };
   } catch (error) {
     return { ok: false, error: (error as Error).message };
   }
@@ -71,7 +87,7 @@ export default async function DashboardPage({
     );
   }
 
-  const { profile, insights } = result;
+  const { profile, insights, accounts, categories } = result;
 
   if (!insights.hasHistory) {
     return (
@@ -79,31 +95,36 @@ export default async function DashboardPage({
         title={profile.displayName ? `Hi, ${profile.displayName}` : "Dashboard"}
         description="Nothing recorded yet."
       >
-        <Card title="Getting started">
-          <EmptyState>
-            There is nothing to show until some money moves.
-          </EmptyState>
-          <ul className="mt-4 space-y-2 text-sm">
-            <li>
-              <Link href="/connections" className="underline underline-offset-4">
-                Connect a mailbox
-              </Link>{" "}
-              and we will read your bank alerts for you.
-            </li>
-            <li>
-              <Link href="/import" className="underline underline-offset-4">
-                Import a statement
-              </Link>{" "}
-              if you would rather start with history.
-            </li>
-            <li>
-              <Link href="/transactions" className="underline underline-offset-4">
-                Add one by hand
-              </Link>{" "}
-              to see how it looks.
-            </li>
-          </ul>
-        </Card>
+        <div className="space-y-4">
+          <Card title="Getting started">
+            <EmptyState>
+              There is nothing to show until some money moves.
+            </EmptyState>
+            <ul className="mt-4 space-y-2 text-sm">
+              <li>
+                <Link href="/connections" className="underline underline-offset-4">
+                  Connect a mailbox
+                </Link>{" "}
+                and we will read your bank alerts for you.
+              </li>
+              <li>
+                <Link href="/import" className="underline underline-offset-4">
+                  Import a statement
+                </Link>{" "}
+                if you would rather start with history.
+              </li>
+              <li>
+                Or type one below — the fastest way to see how any of this looks.
+              </li>
+            </ul>
+          </Card>
+
+          <QuickAdd
+            accounts={accounts}
+            categories={categories}
+            currency={insights.currency}
+          />
+        </div>
       </AppShell>
     );
   }
@@ -116,6 +137,16 @@ export default async function DashboardPage({
       <div className="space-y-4">
         <MonthNav insights={insights} />
         <Headline insights={insights} />
+
+        <Suspense fallback={<MonthSummarySkeleton />}>
+          <MonthSummary month={monthParam(params)} />
+        </Suspense>
+
+        <QuickAdd
+          accounts={accounts}
+          categories={categories}
+          currency={insights.currency}
+        />
 
         {insights.totals.isEmpty ? (
           <Card title="Where it went">

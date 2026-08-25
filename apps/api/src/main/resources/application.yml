@@ -81,6 +81,23 @@ app:
     gmail-base: ${GMAIL_API_BASE:https://gmail.googleapis.com}
     graph-base: ${GRAPH_API_BASE:https://graph.microsoft.com}
 
+  ai:
+    # Off unless someone deliberately turns it on. Every feature built on this
+    # has a deterministic path that runs first, so no key is the normal state
+    # of this application rather than a broken one.
+    enabled: ${AI_ENABLED:false}
+    api-key: ${AI_API_KEY:}
+    # Any OpenAI-compatible /chat/completions endpoint: Groq, OpenRouter,
+    # Together, DeepSeek or a local Ollama all work without a code change.
+    base-url: ${AI_BASE_URL:https://api.openai.com/v1}
+    model: ${AI_MODEL:gpt-4o-mini}
+    timeout-seconds: ${AI_TIMEOUT_SECONDS:20}
+    # Per user, per day. A cap this project can afford to have hit.
+    daily-call-budget: ${AI_DAILY_CALL_BUDGET:200}
+    # Below this the model's reading of an alert is recorded as a failure
+    # rather than turned into a transaction.
+    min-confidence: ${AI_MIN_CONFIDENCE:0.75}
+
 management:
   endpoints:
     web:

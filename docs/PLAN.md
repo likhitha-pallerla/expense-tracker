@@ -243,10 +243,21 @@ advanced analytics · reports.
 Expo app · Android SMS capture with on-device pre-filter and idempotent batched upload ·
 offline queue · push · biometric lock. iOS uses email + manual + share sheet.
 
-### Phase 5 — AI layer
-LLM fallback parser (schema-constrained, confidence-gated) · receipt OCR ·
-natural-language entry ("Spent 850 on dinner at Zomato using HDFC card") ·
-conversational assistant over deterministic figures.
+### Phase 5 — AI layer ✅
+LLM fallback parser (schema-constrained, confidence-gated) · natural-language entry
+("Spent 850 on dinner at Zomato using HDFC card") · plain-English month summary
+over deterministic figures.
+
+Off by default and useful with it off: the rules read alerts, a deterministic
+sentence explains the month, and the typing box asks you to rephrase rather than
+guess. AI is a **second attempt where the rules gave up**, never an override.
+Every reading is re-parsed and range-checked before it becomes a transaction, and
+every number in a summary must already exist in the figures behind it.
+
+**Receipt photo OCR — deferred, not cancelled.** It needs image upload, storage and
+a vision model, which is a different shape of problem from the text path built here
+and cannot be tested without one. Building an unverifiable path into a money app is
+worse than not building it. Revisit when there is a real user asking for it.
 
 ### Phase 6 — Harden
 Sentry · PostHog · rate limiting · structured logging · backups · security review ·

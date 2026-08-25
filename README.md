@@ -83,6 +83,20 @@ cd apps/web && npx tsc --noEmit && npm run lint && npm run build
 cd apps/mobile && npm run typecheck && npm test
 ```
 
+Those run against nothing but themselves. There are also two end-to-end scripts
+that drive the running API against a real Supabase project — one for the normal
+path and one for the AI layer, the latter using a scripted stand-in for a model
+so the interesting failures are reproducible without an API key:
+
+```bash
+node apps/api/e2e/smoke.mjs               # 26 checks, AI off
+node apps/api/e2e/ai.mjs                  # 27 checks, needs e2e/stub-model.mjs
+```
+
+See [`apps/api/e2e/README.md`](apps/api/e2e/README.md) for setup. They are not
+in CI because they need credentials, but they have caught bugs the unit tests
+structurally could not.
+
 ## How authentication works
 
 Supabase signs access tokens with **ES256** and publishes the public key at
@@ -152,6 +166,8 @@ All routes require a bearer token and are scoped to the caller.
 | `POST` | `/api/sms` | Upload a batch of SMS alerts from an Android phone; `parse=true` reads them straight away |
 | `GET` | `/api/sms/policy` | The filter rules the phone must apply, so the app and the server cannot drift apart |
 | `GET` | `/api/insights` | Everything the dashboard shows for one month; `month=YYYY-MM` (defaults to the month you are in) |
+| `GET` | `/api/insights/summary` | The same month in a sentence; template by default, AI when configured |
+| `POST` | `/api/entry/parse` | Read a typed sentence into a draft payment. Creates nothing |
 | `GET` | `/api/forecast` | What the balance does next; `days` (7–92, default 30, clamped not rejected) |
 | `GET` | `/api/goals` | Savings goals with progress; `includeClosed`, `withContributions` |
 | `GET` | `/api/goals/{id}` | One goal, with its full contribution history |
@@ -790,6 +806,115 @@ arrived.
 Phones appear on the web Connections page and can be stopped from there. That
 matters more than it sounds: the device reading your messages should not be the
 one connection you cannot switch off.
+
+### Typing a payment in words
+
+`POST /api/entry/parse` turns "Spent 850 on dinner at Zomato using HDFC card"
+into a filled-in draft: amount, direction, merchant, description, date, and the
+account and category resolved against **your own** lists. The dashboard's *Add
+in words* box shows the reading, every field editable, and files nothing until
+you confirm it.
+
+Two decisions are worth knowing about.
+
+**Rules first, model second.** The grammar for recording a payment is tiny — a
+verb, a number, and up to three prepositional phrases. Rules read it instantly,
+cost nothing, work with no API key and give the same answer every time. The
+model is asked only when the rules find no amount at all, and only when the
+sentence contains a digit — asking about a sentence with no number in it burns
+quota to be told what is already obvious.
+
+**Dates are removed before the amount is looked for.** In "paid 1200 on 12 Jan"
+an amount-first parser finds 12 as readily as 1200. The pipeline runs date →
+amount → account → merchant → purpose, and the order is load-bearing.
+
+Smaller rules that come from the same place:
+
+| Typed | Read as | Why |
+| --- | --- | --- |
+| `250 lunch` | ₹250 spent today | Debit is the default; an expense filed as income flatters every chart |
+| `2 coffees for rs 250` | ₹250 | A currency-marked figure beats a bare one outright |
+| `1,20,000 deposit` | ₹120,000 | Lakh grouping, via the same parser the alert rules use |
+| `1200 using card 4821` | account ending 4821 | The digits tell two cards from the same bank apart; nothing else does |
+| `paid 1200 on 12 Dec` (in Feb) | 12 Dec **last** year | Nobody records a payment that has not happened |
+| `paid 1200 on 31 Feb` | ₹1200, no date | An impossible date is dropped; the payment is not |
+| `using hdfc` with two HDFC cards | no account | An ambiguous match puts the choice in front of you rather than guessing |
+
+It always returns a **draft**. "500 mom" is a gift, a repayment or a transfer and
+nothing can tell which; confirming costs one keypress, and the button is focused
+as soon as the reading appears.
+
+### What the AI does, and what it is never allowed to do
+
+**AI is off unless you configure it.** An install with no API key is the normal
+install, not a degraded one — every AI feature has a deterministic path that
+runs first and a defined behaviour when the model is unavailable.
+
+The rule the whole design rests on is **AI explains, the backend computes.**
+Every figure anywhere in this product is calculated in tested Java. A model is
+allowed to classify uncertain text and to arrange finished numbers into a
+sentence. It is never allowed to produce a number you rely on.
+
+Three places it is used:
+
+| Where | What it does | What happens with AI off |
+| --- | --- | --- |
+| Alert parsing | Reads a bank message no rule matched | The message is marked failed, kept, and retried when a rule improves |
+| Typing in words | Reads a sentence the rules could not | You get "no amount found" and can rephrase |
+| Month summary | Writes the dashboard's paragraph | A deterministic sentence built from the same figures |
+
+**Nothing a model returns is trusted as given.** Its amount goes back through
+the same `Amounts` parser as everything else, its direction must be one of
+exactly two words, its date must be within a few days of when the alert
+arrived, and its own confidence must clear `AI_MIN_CONFIDENCE`. Miss any one and
+the answer is discarded — no transaction rather than a wrong one. Anything it
+does produce is stored with `parsed_by = 'ai'` and its confidence, and is
+labelled as such in the interface, so you can always find what was guessed at.
+
+The month summary has one guard of its own: **every number in the sentence must
+be a number that went in.** A model writes "up 15% on last month" because that
+is the shape of the sentence, not because anything said 15. Any figure that is
+not in the input throws the whole narration away and the deterministic sentence
+is used instead. It catches fabrication rather than misattribution, which is the
+failure that would put a number in front of you that exists nowhere in your
+records.
+
+#### What leaves your machine
+
+Every string sent to a model goes through `Redactor` first, inside the client
+rather than at the call sites, so a forgetful caller cannot cause a privacy
+incident. Scrubbing is idempotent, so double-scrubbing is free.
+
+| Removed | Kept | Why |
+| --- | --- | --- |
+| Card numbers, 13–19 digits, anywhere | — | The one number worth something on its own |
+| Account numbers after `a/c`, `account`, `card` | Last 4 | The last 4 is what matches a payment to your account |
+| Balances after `avl bal`, `closing balance` | Payment amounts | A running balance is a direct statement of net worth and is never needed to record a payment |
+| Email addresses, mobile numbers, OTPs | — | Never needed to read a payment |
+| The number in `9812345678@ybl` | `@ybl`, and `chaiwala@ybl` intact | The handle names an app; the merchant is the point |
+
+One tension has no clean answer: a UPI reference and a bank account number are
+both twelve-ish digit runs. The reference is the strongest duplicate-detection
+signal in the system; the account number is exactly what must not leave. They
+are told apart **by their label, not their shape** — `a/c`/`account`/`card` is
+masked, `ref`/`utr`/`rrn`/`txn` is kept, and an unlabelled run is kept. Alerts
+reliably label the account and often do not label the reference, so the opposite
+choice would lose duplicate detection on nearly every message to protect a
+number printed on every cheque.
+
+Spending is capped per user per day in the database, not in memory — a free
+instance restarts several times a day, and an in-memory counter would reset with
+it at exactly the moment a stuck retry loop would take advantage. A call is
+counted **before** it is made, because a call that times out still cost money.
+
+To switch it on, set `AI_ENABLED=true` and `AI_API_KEY`. `AI_BASE_URL` accepts
+any OpenAI-compatible `/chat/completions` endpoint — Groq, OpenRouter, Together,
+DeepSeek or a local Ollama — so you can point it at whatever still has a free
+tier.
+
+> **Not built:** receipt photo OCR. It needs image upload and storage plus a
+> vision model, and neither exists here yet. Cash spending is covered by typing
+> it in words instead, which is faster than photographing a receipt anyway.
 
 ### Money rules worth knowing
 

@@ -668,3 +668,40 @@ export type Goal = {
   isActive: boolean;
   isCancelled: boolean;
 };
+
+/**
+ * What one typed sentence turned into.
+ *
+ * The hints are returned alongside the resolved ids so the form can explain an
+ * empty box: "hdfc card" matching nothing, or matching two accounts equally,
+ * are different from the user not having said anything.
+ */
+export type EntrySuggestion = {
+  amount: number | null;
+  direction: "debit" | "credit" | null;
+  merchant: string | null;
+  description: string | null;
+  occurredOn: string | null;
+  dateExplicit: boolean;
+  accountId: string | null;
+  accountName: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  accountHint: string | null;
+  categoryHint: string | null;
+  /** A count of recognised fields, not a probability. */
+  understood: number;
+  source: "rules" | "ai";
+  problem: string | null;
+};
+
+/**
+ * The month in a sentence.
+ *
+ * `source` is shown to the user. Someone reading a summary is entitled to know
+ * whether a model wrote it, and the figures inside it are the same either way.
+ */
+export type Narration = {
+  text: string;
+  source: "template" | "ai";
+};

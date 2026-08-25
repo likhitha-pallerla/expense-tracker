@@ -30,10 +30,13 @@ public class InsightsController {
 
     private final InsightsService insights;
     private final UserSettings settings;
+    private final SummaryNarrator narrator;
 
-    public InsightsController(InsightsService insights, UserSettings settings) {
+    public InsightsController(InsightsService insights, UserSettings settings,
+            SummaryNarrator narrator) {
         this.insights = insights;
         this.settings = settings;
+        this.narrator = narrator;
     }
 
     /**
@@ -47,8 +50,22 @@ public class InsightsController {
         return insights.forMonth(userId, parse(month, today));
     }
 
-    private YearMonth parse(String month, LocalDate today) {
-        if (month == null || month.isBlank()) {
+    /**
+     * The month in a sentence.
+     *
+     * <p>A separate call from the figures on purpose. The narration may involve
+     * a model and therefore a network round trip; the dashboard must not wait
+     * on it to draw. The numbers arrive and render, and the sentence appears
+     * when it is ready — or never, without anything looking broken.
+     */
+    @GetMapping("/summary")
+    public SummaryNarrator.Narration summary(@RequestParam(required = false) String month) {
+        java.util.UUID userId = CurrentUser.id();
+        LocalDate today = settings.today(userId);
+        return narrator.narrate(userId, insights.forMonth(userId, parse(month, today)));
+    }
+
+    private YearMonth parse(String month, LocalDate today) {        if (month == null || month.isBlank()) {
             return YearMonth.from(today);
         }
         YearMonth parsed;

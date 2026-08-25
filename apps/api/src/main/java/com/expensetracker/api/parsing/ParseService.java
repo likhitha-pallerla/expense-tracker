@@ -49,14 +49,17 @@ public class ParseService {
     private final ParserRules rules;
     private final TransactionService transactions;
     private final UserSettings settings;
+    private final AiAlertParser aiParser;
     private final TransactionTemplate tx;
 
     public ParseService(JdbcTemplate jdbc, ParserRules rules, TransactionService transactions,
-            UserSettings settings, PlatformTransactionManager transactionManager) {
+            UserSettings settings, AiAlertParser aiParser,
+            PlatformTransactionManager transactionManager) {
         this.jdbc = jdbc;
         this.rules = rules;
         this.transactions = transactions;
         this.settings = settings;
+        this.aiParser = aiParser;
         this.tx = new TransactionTemplate(transactionManager);
     }
 
@@ -120,16 +123,32 @@ public class ParseService {
                 ParsedAlert parsed = AlertParser.parse(message.sender(), message.subject(),
                         message.body(), message.receivedAt(), zone, loaded);
 
+                double confidence = 0;
+                String readBy = "rule";
+
                 if (!parsed.isSuccess()) {
-                    markFailed(userId, message.id(), parsed);
-                    return Outcome.FAILED;
+                    // Only now, and only for this message. The model is asked
+                    // exactly when the deterministic reader has already said it
+                    // cannot help, so it can add messages but never change the
+                    // reading of one a rule understood.
+                    Optional<AiAlertParser.Reading> guessed = aiParser.read(userId,
+                            message.sender(), message.subject(), message.body(),
+                            message.receivedAt(), zone);
+
+                    if (guessed.isEmpty()) {
+                        markFailed(userId, message.id(), parsed);
+                        return Outcome.FAILED;
+                    }
+                    parsed = guessed.get().alert();
+                    confidence = guessed.get().confidence();
+                    readBy = "ai";
                 }
 
                 TransactionService.Created created = transactions.create(userId,
                         toRequest(userId, message, parsed),
                         Origin.message(message.connectionId(), message.id()));
 
-                markParsed(userId, message.id(), parsed);
+                markParsed(userId, message.id(), parsed, readBy, confidence);
                 return created.dedup().isMerged() ? Outcome.MERGED : Outcome.IMPORTED;
             });
         } catch (RuntimeException ex) {
@@ -236,17 +255,40 @@ public class ParseService {
                 userId, DEFAULT_LIMIT);
     }
 
-    private void markParsed(UUID userId, UUID messageId, ParsedAlert parsed) {
+    private void markParsed(UUID userId, UUID messageId, ParsedAlert parsed,
+            String readBy, double confidence) {
         jdbc.update("""
                 update raw_messages
                    set status = 'parsed', parser_rule_id = ?, parse_error = null,
-                       parsed_at = now(), parse_notes = ?
+                       parsed_at = now(), parse_notes = ?,
+                       parsed_by = ?, ai_confidence = ?
                  where id = ? and user_id = ?
                 """,
                 parsed.ruleId(),
-                parsed.dateExact() ? null : "Used the date this alert arrived; "
-                        + "the message did not carry a date we could read.",
+                notesFor(parsed, readBy),
+                readBy,
+                "ai".equals(readBy) ? confidence : null,
                 messageId, userId);
+    }
+
+    /**
+     * What to tell the user about how this one was read.
+     *
+     * <p>An AI reading is always disclosed, even a confident one. Somebody
+     * scanning their transactions has a right to know which of them were
+     * guessed at, and the note is the only place that can be said in the
+     * message list.
+     */
+    private static String notesFor(ParsedAlert parsed, String readBy) {
+        String dateNote = parsed.dateExact() ? null
+                : "Used the date this alert arrived; "
+                        + "the message did not carry a date we could read.";
+        if (!"ai".equals(readBy)) {
+            return dateNote;
+        }
+        String aiNote = "No rule matched this message, so it was read by AI. "
+                + "Worth a glance.";
+        return dateNote == null ? aiNote : aiNote + " " + dateNote;
     }
 
     private void markFailed(UUID userId, UUID messageId, ParsedAlert parsed) {

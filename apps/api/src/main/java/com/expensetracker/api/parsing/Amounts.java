@@ -11,8 +11,12 @@ import java.util.Optional;
  * {@code 123,456.78} — so no locale-aware parser can be trusted here. Stripping
  * the separators and parsing what is left is both simpler and correct for every
  * grouping convention at once.
+ *
+ * <p>Public because natural-language entry needs exactly the same reading of
+ * exactly the same conventions. Two copies of this would drift, and the pair
+ * that drifted would disagree about somebody's money.
  */
-final class Amounts {
+public final class Amounts {
 
     /**
      * Above this, the "amount" is almost certainly something else that happened
@@ -29,7 +33,7 @@ final class Amounts {
      * @return the amount, or empty when the text is not a usable figure. Zero is
      *         rejected: a zero-rupee alert is a notification, not a payment.
      */
-    static Optional<BigDecimal> parse(String text) {
+    public static Optional<BigDecimal> parse(String text) {
         if (text == null) {
             return Optional.empty();
         }
@@ -46,5 +50,29 @@ final class Amounts {
             return Optional.empty();
         }
         return Optional.of(amount);
+    }
+
+    /**
+     * Reads a figure that may still be carrying its currency marker.
+     *
+     * <p>{@link #parse} is fed by regular-expression capture groups, which have
+     * already isolated the digits, so it insists on a bare number. A figure
+     * typed by a person or returned by a model has not been through that step
+     * and arrives as {@code "Rs. 1,250"} or {@code "₹250"} or {@code "1250
+     * INR"}.
+     *
+     * <p>Only the marker is removed. Anything else around the number still
+     * fails, which is the point: {@code "about 500"} is a model telling you it
+     * does not know the amount, and turning that into a transaction for 500
+     * would be recording a guess as a fact.
+     */
+    public static Optional<BigDecimal> parseWithCurrency(String text) {
+        if (text == null) {
+            return Optional.empty();
+        }
+        String stripped = text.strip()
+                .replaceAll("(?i)^(rs\\.?|inr|rupees?|₹|\\$)\\s*", "")
+                .replaceAll("(?i)\\s*(rs\\.?|inr|rupees?|₹|\\$)$", "");
+        return parse(stripped);
     }
 }
